@@ -1,0 +1,339 @@
+:root {
+  --color-bg: #f5f6fa;
+  --color-panel: #ffffff;
+  --color-border: #e1e4e8;
+  --color-text: #1f2430;
+  --color-muted: #6b7280;
+  --color-primary: #2563eb;
+  --color-primary-hover: #1d4ed8;
+  --color-danger: #dc2626;
+  --color-ok: #16a34a;
+  --color-ok-bg: #ecfdf5;
+  --color-warn: #d97706;
+  --color-warn-bg: #fffbeb;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  line-height: 1.5;
+}
+
+header {
+  padding: 24px 16px 8px;
+  text-align: center;
+}
+
+header h1 { margin: 0 0 4px; }
+.subtitle {
+  margin: 0 auto;
+  max-width: 560px;
+  color: var(--color-muted);
+}
+
+.storage-warning {
+  margin: 12px auto 0;
+  max-width: 640px;
+  padding: 8px 12px;
+  background: var(--color-warn-bg);
+  color: var(--color-warn);
+  border: 1px solid var(--color-warn);
+  border-radius: 6px;
+  font-size: 0.9rem;
+}
+.hidden { display: none; }
+
+main {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.panel {
+  background: var(--color-panel);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 20px;
+}
+
+.panel h2 { margin-top: 0; font-size: 1.1rem; display: flex; align-items: center; gap: 8px; }
+
+.step-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  color: white;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.info-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+  border-radius: 50%;
+  border: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-muted);
+  font-size: 0.7rem;
+  font-style: italic;
+  font-weight: 700;
+  cursor: help;
+  padding: 0;
+}
+
+.info-btn .tooltip-bubble {
+  visibility: hidden;
+  opacity: 0;
+  position: absolute;
+  top: 130%;
+  left: 0;
+  z-index: 10;
+  width: 240px;
+  max-width: 70vw;
+  background: var(--color-text);
+  color: white;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 400;
+  font-style: normal;
+  line-height: 1.4;
+  text-align: left;
+  transition: opacity 0.15s ease;
+}
+
+.info-btn:hover .tooltip-bubble,
+.info-btn:focus .tooltip-bubble {
+  visibility: visible;
+  opacity: 1;
+}
+
+.criterion-row {
+  display: grid;
+  grid-template-columns: 150px 1fr 56px 32px;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--color-border);
+}
+.criterion-row:last-child { border-bottom: none; }
+
+.criterion-name {
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 0.95rem;
+}
+
+.criterion-weight-slider { width: 100%; }
+.criterion-weight-number {
+  width: 56px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 6px 4px;
+  text-align: center;
+  font-size: 0.9rem;
+}
+
+.remove-criterion-btn, .delete-opportunity-btn {
+  border: none;
+  background: transparent;
+  color: var(--color-danger);
+  cursor: pointer;
+  font-size: 1rem;
+}
+
+.inline-form {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+.inline-form input {
+  flex: 1;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 8px;
+}
+
+button {
+  cursor: pointer;
+  border-radius: 6px;
+  font-size: 0.95rem;
+}
+
+.primary-btn, .inline-form button[type="submit"] {
+  background: var(--color-primary);
+  color: white;
+  border: none;
+  padding: 8px 16px;
+}
+.primary-btn:hover, .inline-form button[type="submit"]:hover { background: var(--color-primary-hover); }
+
+.secondary-btn {
+  background: transparent;
+  border: 1px solid var(--color-border);
+  padding: 8px 16px;
+  color: var(--color-text);
+}
+
+.weight-banner-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 16px;
+}
+
+.weight-banner {
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+.weight-banner.banner-ok { background: var(--color-ok-bg); color: var(--color-ok); }
+.weight-banner.banner-warn { background: var(--color-warn-bg); color: var(--color-warn); }
+
+#opportunity-title {
+  width: 100%;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 8px;
+  margin-bottom: 14px;
+  font-size: 1rem;
+}
+
+.score-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--color-border);
+}
+.score-row:last-child { border-bottom: none; }
+
+.score-row-label { font-weight: 500; }
+
+.score-buttons { display: flex; gap: 6px; }
+
+.score-btn {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--color-border);
+  background: white;
+  border-radius: 6px;
+  font-weight: 600;
+}
+.score-btn.active {
+  background: var(--color-primary);
+  color: white;
+  border-color: var(--color-primary);
+}
+.score-btn.unknown-btn.active {
+  background: var(--color-warn);
+  border-color: var(--color-warn);
+}
+
+.opportunity-form-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.empty-state { color: var(--color-muted); font-style: italic; }
+
+.obsolete-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  background: var(--color-warn-bg);
+  color: var(--color-warn);
+  border: 1px solid var(--color-warn);
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+/* .hidden and .obsolete-banner have equal specificity (one class each);
+   without this, source order alone decides the winner. This rule's two
+   classes give it higher specificity so `hidden` always wins here. */
+.obsolete-banner.hidden { display: none; }
+
+#ranked-list-container.obsolete {
+  opacity: 0.45;
+  filter: grayscale(70%);
+}
+
+.ranked-row {
+  display: grid;
+  grid-template-columns: 60px 1fr 160px auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--color-border);
+}
+.ranked-row:last-child { border-bottom: none; }
+
+.rank-number { font-weight: 700; color: var(--color-muted); white-space: nowrap; }
+.rank-medal { margin-right: 2px; }
+.rank-score { font-weight: 600; text-align: right; }
+
+.edit-opportunity-btn {
+  background: transparent;
+  border: 1px solid var(--color-border);
+  padding: 6px 10px;
+}
+
+@media (max-width: 600px) {
+  .criterion-row {
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      "name remove"
+      "weight weight"
+      "number number";
+    row-gap: 6px;
+  }
+  .criterion-name { grid-area: name; }
+  .remove-criterion-btn { grid-area: remove; justify-self: end; }
+  .criterion-weight-slider { grid-area: weight; }
+  .criterion-weight-number { grid-area: number; justify-self: start; }
+
+  .score-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+
+  .ranked-row {
+    grid-template-columns: 1fr 1fr;
+    grid-template-areas:
+      "rank rank"
+      "title title"
+      "score score"
+      "edit delete";
+    row-gap: 6px;
+  }
+  .rank-number { grid-area: rank; }
+  .rank-title { grid-area: title; }
+  .rank-score { grid-area: score; text-align: left; }
+  .edit-opportunity-btn { grid-area: edit; }
+  .delete-opportunity-btn { grid-area: delete; }
+}

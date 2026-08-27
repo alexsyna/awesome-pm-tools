@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Career Fit Scorer</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>Career Fit Scorer</h1>
+    <p class="subtitle">This app makes you think of the tradeoffs. What do you optimize for in your opportunities for the next career step. Add the criteria and their weights, then score each opportunity. Then see them in your stack rank.</p>
+    <div id="storage-warning" class="storage-warning hidden">Storage unavailable — changes won't be saved between sessions.</div>
+  </header>
+
+  <main>
+    <section id="criteria-panel" class="panel">
+      <h2>
+        <span class="step-number">1</span>
+        Criteria &amp; Weights
+        <button type="button" class="info-btn" aria-label="Why this section matters">i<span class="tooltip-bubble">Weights are the tradeoffs you're willing to make — not the ones that sound good.</span></button>
+      </h2>
+      <div id="criteria-list"></div>
+      <form id="add-criterion-form" class="inline-form">
+        <input type="text" id="new-criterion-name" placeholder="New criterion name" required>
+        <button type="submit">Add criterion</button>
+      </form>
+      <div class="weight-banner-row">
+        <div id="weight-banner" class="weight-banner"></div>
+        <button id="reset-defaults-btn" type="button" class="secondary-btn">Reset to defaults</button>
+      </div>
+    </section>
+
+    <section id="opportunity-panel" class="panel">
+      <h2>
+        <span class="step-number">2</span>
+        <span id="opportunity-form-title">Add Opportunity</span>
+        <button type="button" class="info-btn" aria-label="Why this section matters">i<span class="tooltip-bubble">Score the job against your own criteria, not your gut. This is how bad offers get caught before you accept them.</span></button>
+      </h2>
+      <div id="opportunity-form-container"></div>
+    </section>
+
+    <section id="ranked-panel" class="panel">
+      <h2>
+        <span class="step-number">3</span>
+        Ranked Opportunities
+        <button type="button" class="info-btn" aria-label="Why this section matters">i<span class="tooltip-bubble">The stack rank you'd get if you were actually consistent. Trust it over whichever one just felt exciting.</span></button>
+      </h2>
+      <div id="obsolete-banner" class="obsolete-banner hidden">
+        Obsolete — criteria changed since these were scored.
+        <button type="button" id="reevaluate-btn" class="secondary-btn">Reevaluate</button>
+      </div>
+      <div id="ranked-list-container"></div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
