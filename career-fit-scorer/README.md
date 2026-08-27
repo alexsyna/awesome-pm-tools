@@ -1,5 +1,8 @@
 # Career Fit Scorer
 
+<img width="1468" height="805" alt="image" src="https://github.com/user-attachments/assets/375c5ac2-8636-4c54-bb4f-382d1ce62322" />
+
+
 A tiny, local-only tool to help you decide whether a job opportunity fits what you actually want next.
 
 You define the criteria that matter to you (Compensation, Scope, Title, Tier of Company, Domain, Work Life Balance by default — fully editable), weight them so they add up to 100%, then score each opportunity 1-5 per criterion. Unsure about one? Mark it "?" instead of guessing, and the app shows a score range instead of a single number. Everything is sorted into a ranked list automatically.
