@@ -1,5 +1,8 @@
 # Career Fit Scorer
 
+<img width="1468" height="833" alt="image" src="https://github.com/user-attachments/assets/9cce05c6-347d-491e-ad28-a7f77ebc6a18" />
+
+
 A tiny, local-only tool to help you decide whether a job opportunity fits what you actually want next.
 
 Try it here: https://alexsyna.github.io/awesome-pm-tools/career-fit-scorer/
