@@ -5,6 +5,8 @@
 
 A tiny, local-only tool to help you decide whether a job opportunity fits what you actually want next.
 
+You can try it here 👉 https://alexsyna.github.io/awesome-pm-tools/career-fit-scorer/
+
 You define the criteria that matter to you (Compensation, Scope, Title, Tier of Company, Domain, Work Life Balance by default — fully editable), weight them so they add up to 100%, then score each opportunity 1-5 per criterion. Unsure about one? Mark it "?" instead of guessing, and the app shows a score range instead of a single number. Everything is sorted into a ranked list automatically.
 
 No server, no account, no tracking. Everything lives in your browser's local storage.
