@@ -127,7 +127,7 @@ main {
 
 .criterion-row {
   display: grid;
-  grid-template-columns: 150px 1fr 56px 32px;
+  grid-template-columns: 150px 1fr 72px 32px;
   align-items: center;
   gap: 10px;
   padding: 8px 0;
@@ -143,13 +143,22 @@ main {
 }
 
 .criterion-weight-slider { width: 100%; }
+.criterion-weight-number-wrap {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
 .criterion-weight-number {
-  width: 56px;
+  width: 52px;
   border: 1px solid var(--color-border);
   border-radius: 6px;
   padding: 6px 4px;
   text-align: center;
   font-size: 0.9rem;
+}
+.percent-suffix {
+  color: var(--color-muted);
+  font-size: 0.85rem;
 }
 
 .remove-criterion-btn, .delete-opportunity-btn {
@@ -195,13 +204,15 @@ button {
 
 .weight-banner-row {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   align-items: center;
   margin-top: 16px;
 }
 
 .weight-banner {
+  display: inline-block;
   padding: 6px 12px;
+  margin-bottom: 14px;
   border-radius: 6px;
   font-weight: 600;
   font-size: 0.9rem;
@@ -314,7 +325,7 @@ button {
   .criterion-name { grid-area: name; }
   .remove-criterion-btn { grid-area: remove; justify-self: end; }
   .criterion-weight-slider { grid-area: weight; }
-  .criterion-weight-number { grid-area: number; justify-self: start; }
+  .criterion-weight-number-wrap { grid-area: number; justify-self: start; }
 
   .score-row {
     flex-direction: column;

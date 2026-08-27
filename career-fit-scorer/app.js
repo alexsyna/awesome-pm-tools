@@ -13,7 +13,10 @@ function getDefaultCriteria() {
     { id: 'wlb', name: 'Work Life Balance' }
   ];
   const evenWeight = Math.floor(100 / names.length);
-  return names.map(n => ({ ...n, weight: evenWeight }));
+  const remainder = 100 - evenWeight * names.length;
+  // Give the leftover from the floor division to the first criterion so a
+  // fresh state always sums to exactly 100% — no gate for a new visitor to hit.
+  return names.map((n, i) => ({ ...n, weight: evenWeight + (i === 0 ? remainder : 0) }));
 }
 
 function cloneCriteria(criteria) {
@@ -154,12 +157,21 @@ function renderCriteriaPanel() {
   // bug. It never clips an existing value, and the number input (max=100)
   // remains the uncapped way to reach anything the slider's scale doesn't cover.
   const highestWeight = state.criteria.reduce((max, c) => Math.max(max, c.weight), 0);
-  const sliderScaleMax = Math.min(100, Math.max(meanWeight * 2, highestWeight, 20));
+  // With few criteria the mean is large (e.g. 33% for 3), so "2x mean" leaves
+  // too little room — one criterion legitimately dominating at 80-90% is
+  // normal with only a handful of them, not an edge case. Only zoom in once
+  // there are enough criteria that no single one plausibly needs that much.
+  const sliderScaleMax = state.criteria.length > 4
+    ? Math.min(100, Math.max(meanWeight * 2, highestWeight, 20))
+    : 100;
   list.innerHTML = state.criteria.map(criterion => `
     <div class="criterion-row">
       <input type="text" class="criterion-name" data-id="${criterion.id}" value="${escapeHtml(criterion.name)}">
       <input type="range" class="criterion-weight-slider" data-id="${criterion.id}" min="0" max="${sliderScaleMax}" step="1" value="${criterion.weight}" list="criteria-mean-marker">
-      <input type="number" class="criterion-weight-number" data-id="${criterion.id}" min="0" max="100" step="1" value="${criterion.weight}">
+      <div class="criterion-weight-number-wrap">
+        <input type="number" class="criterion-weight-number" data-id="${criterion.id}" min="0" max="100" step="1" value="${criterion.weight}">
+        <span class="percent-suffix">%</span>
+      </div>
       <button type="button" class="remove-criterion-btn" data-id="${criterion.id}" aria-label="Remove ${escapeHtml(criterion.name)}">✕</button>
     </div>
   `).join('') + `<datalist id="criteria-mean-marker"><option value="${meanWeight}"></option></datalist>`;

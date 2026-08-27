@@ -1,11 +1,8 @@
 # Career Fit Scorer
 
-<img width="1468" height="805" alt="image" src="https://github.com/user-attachments/assets/375c5ac2-8636-4c54-bb4f-382d1ce62322" />
-
-
 A tiny, local-only tool to help you decide whether a job opportunity fits what you actually want next.
 
-You can try it here 👉 https://alexsyna.github.io/awesome-pm-tools/career-fit-scorer/
+Try it here: https://alexsyna.github.io/awesome-pm-tools/career-fit-scorer/
 
 You define the criteria that matter to you (Compensation, Scope, Title, Tier of Company, Domain, Work Life Balance by default — fully editable), weight them so they add up to 100%, then score each opportunity 1-5 per criterion. Unsure about one? Mark it "?" instead of guessing, and the app shows a score range instead of a single number. Everything is sorted into a ranked list automatically.
 
@@ -23,6 +20,7 @@ I kept making career decisions on gut feel, then rationalizing the numbers after
 - **"Unknown" scores stay wide.** Marking a criterion "?" always treats it as the full 1-5 range rather than a narrowed confidence band. A low/medium/high confidence input would've added precision, but it's a second judgment call stacked on the first one, and I'd rather keep the uncertainty honest than falsely precise.
 - **The ranking freezes until you say it's current.** Changing a weight doesn't quietly reshuffle your rankings in the background. It marks them obsolete and grays them out until you click Reevaluate, so you notice the change instead of missing it.
 - **localStorage instead of a real database.** No accounts, no server, no sync across devices. Your data lives in one browser. That's a real limitation if you switch laptops, but it's the honest cost of a tool with zero setup.
+- **Sliders only zoom in above 4 criteria.** Below that, each slider covers the full 0-100% range. Above it, the scale centers on the mean instead. With 3 criteria, wanting one to dominate at 90% is a normal answer, and the slider needs to reach it directly. With 10, a single criterion at 97% while the rest sit at 1% isn't a real preference, it's noise that doesn't inform the decision, so zooming in there trades away range you're unlikely to need for precision at the values people actually pick.
 
 **What I'd build next:** export/import so a ranking survives a browser reset, a side-by-side view for comparing two opportunities instead of just a ranked list, and a way for a second opinion (a mentor, a partner) to score against the same criteria without handing over your whole history.
 
