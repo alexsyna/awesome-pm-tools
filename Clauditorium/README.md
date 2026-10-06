@@ -2,12 +2,13 @@
 
 Turn any HTML file Claude generates into a link you can share.
 
-![How Clauditorium works: create an HTML page with Claude, push it to the GitHub repo that contains Clauditorium, share the link](how-it-works.svg)
+<img width="960" height="480" alt="image" src="https://github.com/user-attachments/assets/68e8fbd7-230c-4095-bbc1-b84ebb8af93c" />
+
 
 Drop the file into a folder, push, send the URL. No build step, no backend, no dependencies. Three static files on GitHub Pages.
 
 ```
-https://<user>.github.io/<repo>/clauditorium/?page=q3-roadmap
+https://<user>.github.io/<repo>/clauditorium/?page=example
 ```
 
 ## Why
