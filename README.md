@@ -8,7 +8,7 @@ Small, free tools for product managers. No sign-up, no backend, nothing to insta
 
 🎯 TOOL 2: **Career Fit Scorer**: score and rank job opportunities against your own criteria.
 
-💾 TOOL 3: **Data Anonymizer**: turns a CSV with personal data into a version you can share for research and other purposes, and checks that nobody in it can be identified.
+💾 TOOL 3: **Data Anonymizer**: turns a CSV with PII data into a version you can share for research and other purposes, and checks that nobody in it can be identified.
 
 
 📄 Apache-2.0. Issues and pull requests welcome.
