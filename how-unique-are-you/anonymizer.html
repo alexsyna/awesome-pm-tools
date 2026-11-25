@@ -1,0 +1,1688 @@
+<!doctype html>
+<!--
+  CSV Anonymizer: check a CSV for re-identification risk and export a safer version.
+  Everything runs in this page; the file never leaves the computer (no server, no network).
+  Built from src/ with:  deno run -A build.ts   →  dist/index.html (one self-contained file).
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- No network access at all: the page can't send data anywhere, even by mistake. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'none'; form-action 'none'; base-uri 'none'">
+<title>Data Anonymizer</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22%3E%3Crect width=%2264%22 height=%2264%22 rx=%2214%22 fill=%22%23c2185b%22/%3E%3Ccircle cx=%2232%22 cy=%2224%22 r=%229%22 fill=%22white%22/%3E%3Cpath d=%22M16 50c2-9 9-14 16-14s14 5 16 14%22 fill=%22white%22/%3E%3C/svg%3E">
+<meta property="og:title" content="Data Anonymizer">
+<meta property="og:description" content="Check a CSV for people who could be singled out, fix it, and export a safer version. Runs entirely in your browser.">
+<meta property="og:image" content="preview.png">
+<style>
+/* Layout: a top bar and one working surface. */
+:root {
+  --bg: #f8f6f7; --surface: #ffffff; --fg: #1f1a1d; --muted: #6b6168; --line: #e6dfe3; --hover: #f3eef1;
+  --accent: #c2185b; --accent-ink: #ffffff; --accent-soft: #fbe6ef; --bar: #c2185b; --bar-soft: #f2bcd2;
+  --good: #1f7a4d; --good-soft: #def3e8; --idle: #8a7f86; --idle-soft: #eee9ec; --warn: #9a5b00; --warn-soft: #fdf1dc;
+  --bad: #b3261e; --code-bg: #f3eef1;
+  --body: "IBM Plex Sans", system-ui, sans-serif; --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #141113; --surface: #1d191b; --fg: #eee7eb; --muted: #a59aa1; --line: #342c31; --hover: #262024;
+  --accent: #f06292; --accent-ink: #1d191b; --accent-soft: #3a1d29; --bar: #f06292; --bar-soft: #6a2f45;
+  --good: #6fd3a0; --good-soft: #173528; --idle: #9a8f96; --idle-soft: #2a2427; --warn: #f0b860; --warn-soft: #3a2c14;
+  --bad: #ff8a80; --code-bg: #2a2327; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #141113; --surface: #1d191b; --fg: #eee7eb; --muted: #a59aa1; --line: #342c31; --hover: #262024;
+  --accent: #f06292; --accent-ink: #1d191b; --accent-soft: #3a1d29; --bar: #f06292; --bar-soft: #6a2f45;
+  --good: #6fd3a0; --good-soft: #173528; --idle: #9a8f96; --idle-soft: #2a2427; --warn: #f0b860; --warn-soft: #3a2c14;
+  --bad: #ff8a80; --code-bg: #2a2327; color-scheme: dark }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.5 var(--body); }
+button, input, textarea, select { font: inherit; color: inherit; }
+code, .mono { font-family: var(--mono); }
+
+header.top { position: sticky; top: 0; z-index: 5; background: var(--surface); border-bottom: 1px solid var(--line); }
+.top-inner { max-width: 1280px; margin: 0 auto; padding: 10px 16px; display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
+.brand { font-weight: 600; display: flex; align-items: baseline; gap: 8px; }
+.brand b { color: var(--accent); }
+.brand span { color: var(--muted); font-weight: 400; font-size: 13px; }
+nav.tabs { display: flex; gap: 4px; }
+nav.tabs a { padding: 6px 12px; border-radius: 6px; text-decoration: none; color: var(--muted); font-weight: 500; }
+nav.tabs a:hover { background: var(--hover); color: var(--fg); }
+nav.tabs a[aria-current="page"] { background: var(--accent-soft); color: var(--accent); }
+.top-status { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+
+main { max-width: 1280px; margin: 0 auto; padding: 24px 16px 64px; }
+section.view { display: grid; gap: 20px; }
+h1 { font-size: 20px; margin: 0; font-weight: 600; }
+h2 { font-size: 15px; margin: 0; font-weight: 600; }
+.sub { color: var(--muted); margin: 2px 0 0; max-width: 75ch; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; min-width: 0; }
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.spacer { flex: 1; }
+
+.btn { border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 7px 14px; cursor: pointer; font-weight: 500; }
+.btn:hover:not(:disabled) { background: var(--hover); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn.primary:hover:not(:disabled) { filter: brightness(1.08); background: var(--accent); }
+.btn:disabled { opacity: .5; cursor: default; }
+.btn.small { padding: 3px 10px; font-size: 13px; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; border-radius: 999px; padding: 2px 10px; white-space: nowrap; }
+.pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.pill.running { background: var(--good-soft); color: var(--good); }
+.pill.stopped { background: var(--idle-soft); color: var(--idle); }
+.pill.busy { background: var(--warn-soft); color: var(--warn); }
+
+/* Servers */
+.services { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+.svc { display: grid; gap: 6px; }
+.svc .row { justify-content: space-between; }
+.svc p { margin: 0; color: var(--muted); font-size: 13px; }
+.svc a { color: var(--accent); }
+pre.log { margin: 0; font: 12px/1.5 var(--mono); background: var(--code-bg); border-radius: 8px; padding: 10px 12px; height: 280px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
+
+/* Database */
+.db-layout { display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 760px) { .db-layout { grid-template-columns: 1fr; } }
+.tablelist { display: grid; gap: 2px; padding: 8px; }
+.tablelist button { display: flex; justify-content: space-between; gap: 8px; text-align: left; border: 0; background: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; }
+.tablelist button:hover { background: var(--hover); }
+.tablelist button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
+.tablelist .n { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 12px; }
+.tablelist .grp { font: 500 11px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); padding: 10px 10px 4px; }
+.grid-wrap { overflow: auto; max-height: 65vh; border: 1px solid var(--line); border-radius: 8px; }
+table.grid { border-collapse: collapse; font-size: 13px; width: max-content; min-width: 100%; }
+table.grid th { position: sticky; top: 0; background: var(--surface); text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); font-weight: 500; white-space: nowrap; }
+table.grid th button { border: 0; background: none; padding: 0; cursor: pointer; font-weight: 600; display: inline-flex; gap: 4px; }
+table.grid th .t { display: block; font: 11px var(--mono); color: var(--muted); font-weight: 400; }
+table.grid td { padding: 6px 10px; border-bottom: 1px solid var(--line); vertical-align: top; font-family: var(--mono); font-size: 12px; max-width: 360px; }
+table.grid tr:hover td { background: var(--hover); }
+td .null { color: var(--muted); font-style: italic; }
+td .masked { color: var(--muted); letter-spacing: .1em; }
+td details summary { cursor: pointer; color: var(--accent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 340px; }
+td details pre { margin: 6px 0 0; white-space: pre-wrap; max-height: 300px; overflow: auto; background: var(--code-bg); padding: 6px 8px; border-radius: 6px; }
+td .ts { color: var(--muted); }
+.cell-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; max-width: 340px; }
+textarea#sql { width: 100%; min-height: 90px; font: 13px/1.5 var(--mono); background: var(--code-bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px; resize: vertical; }
+.toggle { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; }
+.toggle input { accent-color: var(--accent); width: 16px; height: 16px; }
+.notice { background: var(--warn-soft); color: var(--fg); border-radius: 8px; padding: 10px 14px; }
+.notice b { color: var(--warn); }
+.error { color: var(--bad); }
+.muted { color: var(--muted); }
+
+/* Analytics */
+.tiles { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+.tile { display: grid; gap: 2px; }
+.tile .v { font-size: 30px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.15; }
+.tile .l { color: var(--muted); font-size: 13px; }
+.tile .x { color: var(--muted); font-size: 12px; }
+.charts { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); }
+@media (max-width: 520px) { .charts { grid-template-columns: 1fr; } }
+.chart { display: grid; gap: 10px; align-content: start; }
+.chart svg { width: 100%; height: auto; display: block; overflow: visible; }
+.chart svg text { fill: var(--muted); font: 11px var(--body); font-variant-numeric: tabular-nums; }
+.chart .gridline { stroke: var(--line); stroke-width: 1; }
+.chart .baseline { stroke: var(--muted); stroke-width: 1; }
+.chart .bar { fill: var(--bar); }
+.chart .bar:hover, .chart .hit:hover + .bar { fill: var(--accent); filter: brightness(0.85); }
+.chart .hit { fill: transparent; cursor: default; }
+.hbars { display: grid; gap: 6px; }
+.hbar { display: grid; grid-template-columns: minmax(120px, 44%) 1fr; gap: 10px; align-items: center; font-size: 13px; }
+.hbar .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hbar .track { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.hbar .fill { height: 14px; background: var(--bar); border-radius: 0 4px 4px 0; min-width: 2px; }
+.hbar .fill.zero { background: var(--line); }
+.hbar .val { font-variant-numeric: tabular-nums; color: var(--fg); white-space: nowrap; font-size: 12px; }
+.hbar .val span { color: var(--muted); }
+.chart details summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+.chart details table { border-collapse: collapse; font-size: 12px; margin-top: 6px; }
+.chart details td, .chart details th { padding: 3px 12px 3px 0; text-align: left; font-variant-numeric: tabular-nums; }
+#tooltip { position: fixed; pointer-events: none; z-index: 20; background: var(--fg); color: var(--bg); padding: 5px 9px; border-radius: 6px; font-size: 12px; opacity: 0; transition: opacity .08s; white-space: nowrap; }
+@media (prefers-reduced-motion: reduce) { #tooltip { transition: none; } }
+/* Data switch */
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button { border: 0; background: var(--surface); padding: 4px 10px; cursor: pointer; font-size: 13px; color: var(--muted); }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); font-weight: 500; }
+.seg-label { color: var(--muted); font-size: 13px; }
+
+/* Anonymization */
+.anon-layout { display: grid; grid-template-columns: minmax(340px, 440px) minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 980px) { .anon-layout { grid-template-columns: 1fr; } }
+.stack { display: grid; gap: 16px; min-width: 0; }
+.panel h2 + .sub { margin-top: 2px; font-size: 13px; }
+.checks-row { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 10px; }
+.fields { display: grid; gap: 8px; margin-top: 12px; }
+.field { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; display: grid; gap: 6px; }
+.field .top { display: flex; gap: 8px; align-items: flex-start; }
+.field .name { flex: 1; min-width: 0; font-weight: 500; }
+.field .name small { display: block; color: var(--muted); font-weight: 400; font-size: 12px; }
+.field .ctrls { display: grid; grid-template-columns: 1fr; gap: 6px; }
+.field select, .adder select, .adder input, .policy input { width: 100%; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); padding: 4px 6px; font-size: 13px; min-width: 0; }
+.field.qi { border-left: 3px solid var(--accent); }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; font-size: 12px; }
+.seg button { border: 0; background: var(--surface); color: var(--muted); padding: 4px 9px; cursor: pointer; font-size: 12px; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed=true].qi { background: color-mix(in srgb, var(--accent) 14%, var(--surface)); color: var(--fg); font-weight: 500; }
+.seg button[aria-pressed=true].sensitive { background: var(--good-soft); color: var(--fg); font-weight: 500; }
+.role { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
+.info { display: inline-grid; place-items: center; width: 15px; height: 15px; border-radius: 50%; border: 1px solid var(--muted); color: var(--muted); font-size: 10px; font-weight: 600; font-style: normal; cursor: help; vertical-align: 1px; margin-left: 3px; }
+.info:hover, .info:focus-visible { border-color: var(--accent); color: var(--accent); outline: none; }
+#tooltip.wrap { white-space: normal; max-width: 290px; line-height: 1.4; }
+.field.sensitive { border-left: 3px solid var(--good); }
+.x { border: 0; background: none; cursor: pointer; color: var(--muted); font-size: 16px; line-height: 1; padding: 2px 4px; border-radius: 4px; }
+.x:hover { background: var(--hover); color: var(--fg); }
+.adder { display: grid; gap: 8px; margin-top: 12px; }
+.cols { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 6px 14px; margin-top: 10px; }
+.cols .toggle { font-size: 13px; }
+.cols .locked { color: var(--muted); cursor: not-allowed; }
+.cols .locked small { font-size: 11px; }
+h3 { font-size: 13px; font-weight: 600; margin: 16px 0 0; }
+.band { display: grid; gap: 4px; font-size: 13px; }
+.band .row { gap: 8px; flex-wrap: nowrap; }
+.band input[type=range] { flex: 1; accent-color: var(--accent); min-width: 0; }
+.band output { font-variant-numeric: tabular-nums; min-width: 64px; font-weight: 500; }
+.band small, .range small { color: var(--muted); font-size: 12px; }
+.range { display: grid; gap: 4px; font-size: 13px; }
+.range .row { gap: 8px; flex-wrap: nowrap; }
+.range .row > span:first-child { min-width: 64px; }
+.range output { font-weight: 500; flex: 1; }
+.dual { position: relative; height: 22px; flex: 1; min-width: 0; }
+.dual .track { position: absolute; left: 0; right: 0; top: 9px; height: 4px; border-radius: 2px; background: var(--line); }
+.dual .fill { position: absolute; top: 9px; height: 4px; border-radius: 2px; background: var(--accent); }
+.dual input { position: absolute; inset: 0; width: 100%; margin: 0; background: none; pointer-events: none; -webkit-appearance: none; appearance: none; }
+.dual input::-webkit-slider-runnable-track { background: none; height: 22px; }
+.dual input::-webkit-slider-thumb { -webkit-appearance: none; pointer-events: auto; width: 16px; height: 16px; margin-top: 3px; border-radius: 50%; background: var(--accent); border: 2px solid var(--surface); box-shadow: 0 0 0 1px var(--accent); cursor: grab; }
+.dual input::-moz-range-track { background: none; }
+.dual input::-moz-range-thumb { pointer-events: auto; width: 14px; height: 14px; border-radius: 50%; background: var(--accent); border: 2px solid var(--surface); cursor: grab; }
+.dual input:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent); }
+.qtools { gap: 8px; margin-top: 6px; flex-wrap: wrap; }
+.qtools input { flex: 1 1 220px; min-width: 0; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); padding: 5px 8px; font-size: 13px; }
+.linkbtn { border: 0; background: none; color: var(--accent); cursor: pointer; font-size: 13px; padding: 2px 4px; white-space: nowrap; }
+.linkbtn:hover { text-decoration: underline; }
+.qtree { margin-top: 8px; border: 1px solid var(--line); border-radius: 8px; max-height: 420px; overflow: auto; font-size: 13px; }
+.qtree details { border-bottom: 1px solid var(--line); }
+.qtree details details { border-bottom: 0; border-top: 1px solid var(--line); }
+.qtree details:last-child { border-bottom: 0; }
+.qtree summary { display: flex; align-items: center; gap: 8px; padding: 6px 10px; cursor: pointer; list-style: none; }
+.qtree summary::-webkit-details-marker { display: none; }
+.qtree summary::before { content: "▸"; color: var(--muted); width: 10px; transition: transform .1s; }
+.qtree details[open] > summary::before { transform: rotate(90deg); }
+.qtree summary:hover, .qtree .q:hover { background: var(--hover); }
+.qtree .cat > summary { font-weight: 600; }
+.qtree .ch > summary { padding-left: 28px; }
+.qtree .q { display: flex; gap: 8px; align-items: flex-start; padding: 5px 10px 5px 64px; cursor: pointer; }
+.qtree .q input { margin-top: 2px; }
+.qtree .lbl { flex: 1; min-width: 0; }
+.qtree .n { color: var(--muted); font-size: 12px; white-space: nowrap; font-weight: 400; font-variant-numeric: tabular-nums; }
+.qtree .n.on { color: var(--accent); font-weight: 500; }
+.qtree mark { background: color-mix(in srgb, var(--accent) 22%, transparent); color: inherit; border-radius: 2px; }
+.kind { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 4px; }
+.kind b { color: var(--accent); font-weight: 500; }
+.qsel { border: 1px solid var(--line); border-left: 3px solid var(--good); border-radius: 8px; padding: 8px 10px; display: grid; gap: 6px; }
+.qsel .head { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; font-weight: 500; }
+.qsel .head small { color: var(--muted); font-weight: 400; font-size: 12px; }
+.qsel .list { max-height: 320px; overflow: auto; display: grid; }
+.qrow { display: flex; gap: 8px; align-items: center; padding: 5px 0; border-top: 1px solid var(--line); font-size: 13px; }
+.qrow .t { flex: 1; min-width: 0; }
+.qrow .t small { display: block; color: var(--muted); font-size: 12px; }
+.qrow select.qlevel { width: 130px; flex: none; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); padding: 3px 5px; font-size: 12px; }
+.qrow .pub { font-size: 12px; color: var(--muted); white-space: nowrap; display: flex; gap: 4px; align-items: center; cursor: pointer; }
+.qrow.public { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.qrow .wh { font-size: 12px; color: var(--bad); white-space: nowrap; }
+.qresults { max-height: 260px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; }
+.qresults button { display: block; width: 100%; text-align: left; border: 0; border-bottom: 1px solid var(--line); background: none; padding: 6px 10px; cursor: pointer; font-size: 13px; }
+.qresults button:hover { background: var(--hover); }
+.qresults small { display: block; color: var(--muted); font-size: 12px; }
+.policy { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin-top: 10px; }
+.policy label { display: grid; gap: 3px; font-size: 12px; color: var(--muted); }
+#an-verdict { position: sticky; top: var(--hdr, 56px); z-index: 4; }
+/* Once stuck under the menu: one compact row, with a strip of page background around it so the
+   content scrolling underneath never shows through the gaps. */
+#an-verdict.stuck { padding: 8px 12px; gap: 8px; flex-wrap: nowrap; border-radius: 0 0 10px 10px; box-shadow: 0 0 0 8px var(--bg), 0 10px 14px -6px rgb(0 0 0 / .25); }
+#an-verdict.stuck p, #an-verdict.stuck .db span.n { display: none; }
+#an-verdict.stuck .big { font-size: 14px; }
+#an-verdict.stuck .db { margin-top: 0; }
+#an-verdict.stuck > div:first-child { min-width: 0 !important; }
+#an-verdict.stuck .btn { padding: 5px 10px; font-size: 13px; white-space: nowrap; }
+#an-verdict.stuck #an-suggest { display: none; }
+dialog.modal { padding: 0; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--fg); box-shadow: 0 24px 60px -20px rgb(0 0 0 / .45); }
+dialog.modal::backdrop { background: rgb(0 0 0 / .45); }
+dialog.modal:focus, dialog.modal:focus-visible { outline: none; }
+dialog.modal[open] { animation: dlg-in .18s ease-out; }
+dialog.modal[open]::backdrop { animation: dlg-fade .18s ease-out; }
+@keyframes dlg-in { from { opacity: 0; transform: translateY(10px) scale(.985); } to { opacity: 1; transform: none; } }
+@keyframes dlg-fade { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { dialog.modal[open], dialog.modal[open]::backdrop { animation: none; } }
+/* The preview opens at its final size, so it doesn't jump when the rows arrive. */
+dialog.preview { width: min(1200px, 96vw); height: min(88vh, 900px); }
+dialog.preview[open] { display: flex; flex-direction: column; }
+dialog.preview .body { flex: 1; min-height: 0; }
+dialog.preview .loading { display: grid; place-items: center; height: 100%; color: var(--muted); font-size: 14px; }
+dialog.suggest { width: min(640px, 94vw); }
+dialog.suggest .head, dialog.preview .head { display: flex; gap: 12px; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+dialog.suggest .head h2 { margin: 0; font-size: 16px; }
+dialog.suggest .head.pass h2 { color: var(--good); }
+dialog.suggest .head.fail h2 { color: var(--bad); }
+dialog.suggest .mbody { padding: 12px 16px; font-size: 14px; display: grid; gap: 8px; max-height: 65vh; overflow: auto; }
+dialog.suggest .mbody p { margin: 0; }
+dialog.suggest ol, dialog.suggest ul { margin: 0; padding-left: 20px; display: grid; gap: 6px; }
+dialog.suggest ul.why li { line-height: 1.45; }
+dialog.suggest ul.why .btn { margin-top: 4px; display: inline-block; }
+dialog.suggest h3 { margin: 6px 0 0; font-size: 14px; }
+dialog.suggest .opts { display: grid; gap: 8px; }
+.title-row { display: flex; align-items: center; gap: 10px; }
+.back-link { display: inline-block; margin-bottom: 8px; color: var(--accent); text-decoration: none; font-size: 13px; font-weight: 500; }
+.back-link:hover { text-decoration: underline; }
+/* The user guide pop-up: contents on the left, the guide on the right. */
+dialog.help { width: min(1040px, 96vw); height: min(90vh, 980px); }
+dialog.help[open] { display: flex; flex-direction: column; }
+dialog.help .head { display: flex; gap: 12px; align-items: center; padding: 12px 18px; border-bottom: 1px solid var(--line); }
+dialog.help .head h2 { margin: 0; font-size: 17px; }
+dialog.help .hbody { flex: 1; min-height: 0; display: grid; grid-template-columns: 220px minmax(0, 1fr); }
+dialog.help .toc { border-right: 1px solid var(--line); padding: 14px 10px; overflow: auto; display: grid; align-content: start; gap: 2px; }
+dialog.help .toc a { display: block; padding: 6px 10px; border-radius: 6px; color: var(--fg); text-decoration: none; font-size: 13px; }
+dialog.help .toc a:hover, dialog.help .toc a.on { background: var(--hover); }
+dialog.help .toc a.on { color: var(--accent); font-weight: 500; }
+dialog.help .doc { overflow: auto; padding: 8px 28px 40px; font-size: 14px; line-height: 1.6; max-width: 820px; }
+.doc h2 { font-size: 19px; margin: 26px 0 8px; padding-top: 6px; scroll-margin-top: 12px; }
+.doc h2:first-child { margin-top: 12px; }
+.doc h3 { font-size: 15px; margin: 18px 0 6px; scroll-margin-top: 12px; }
+.doc p { margin: 8px 0; }
+.doc ul, .doc ol { margin: 8px 0; padding-left: 22px; }
+.doc li { margin: 3px 0; }
+.doc table { border-collapse: collapse; margin: 10px 0; font-size: 13px; width: 100%; }
+.doc th, .doc td { border-bottom: 1px solid var(--line); padding: 6px 8px; text-align: left; vertical-align: top; }
+.doc th { font-weight: 600; background: var(--hover); }
+.doc code { background: var(--hover); border-radius: 4px; padding: 1px 5px; font-size: 12.5px; }
+.doc strong { font-weight: 600; }
+@media (max-width: 760px) { dialog.help .hbody { grid-template-columns: 1fr; } dialog.help .toc { display: none; } dialog.help .doc { padding: 4px 16px 32px; } }
+.crumbs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 14px 0 16px; }
+.crumb { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 2px 8px; align-items: center; text-align: left; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); padding: 8px 10px; cursor: pointer; font: inherit; color: var(--fg); }
+.crumb:hover { background: var(--hover); }
+.crumb .num { grid-row: span 2; display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--hover); font-size: 12px; font-weight: 600; color: var(--muted); }
+.crumb b { font-size: 13px; font-weight: 600; }
+.crumb small { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.crumb[aria-current=step] { border: 2px solid var(--accent); padding: 7px 9px; }
+.crumb[aria-current=step] .num { background: var(--accent); color: #fff; }
+.crumb.done .num { background: color-mix(in srgb, var(--accent) 16%, var(--surface)); color: var(--accent); }
+.crumb.safe .num { background: var(--good); color: #fff; }
+.crumb.unsafe .num { background: var(--bad); color: #fff; }
+.crumb.unsafe small { color: var(--bad); }
+@media (max-width: 760px) { .crumbs { grid-template-columns: 1fr 1fr; } }
+.step-panel[hidden] { display: none !important; }
+.step-nav { display: flex; justify-content: space-between; gap: 8px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line); }
+.step-nav .spacer { flex: 1; }
+.review { display: grid; gap: 0; }
+.review .rv { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; padding: 9px 0; border-top: 1px solid var(--line); font-size: 13px; }
+.review .rv:first-child { border-top: 0; }
+.review .rv b { font-weight: 600; }
+.review .rv span { grid-column: 1; color: var(--muted); line-height: 1.45; }
+.review .rv .linkbtn { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
+.sec-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 6px; }
+.sec-head h2 { margin: 0; }
+details.sec { border-top: 1px solid var(--line); }
+details.sec > summary { display: flex; gap: 10px; align-items: flex-start; padding: 10px 2px; cursor: pointer; list-style: none; }
+details.sec > summary::-webkit-details-marker { display: none; }
+details.sec > summary:hover { background: var(--hover); }
+details.sec .st { flex: 1; min-width: 0; display: grid; gap: 1px; }
+details.sec .st b { font-weight: 600; font-size: 14px; }
+details.sec .st small { color: var(--muted); font-size: 13px; }
+details.sec.no .st small { color: var(--bad); }
+details.sec .chev { color: var(--muted); font-size: 18px; line-height: 1; transition: transform .12s; }
+details.sec[open] .chev { transform: rotate(90deg); }
+details.sec .sec-body { padding: 0 2px 14px 30px; display: grid; gap: 10px; }
+.ic.ok, .ic.warn, .ic.no { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; font-size: 11px; font-weight: 700; flex: none; color: #fff; }
+.ic.ok { background: var(--good); } .ic.no { background: var(--bad); } .ic.warn { background: var(--warn); }
+.fixes { display: grid; gap: 6px; }
+.fixes .fx-h { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.fix { display: flex; gap: 10px; align-items: center; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+.fix > div { flex: 1; min-width: 0; display: grid; gap: 2px; font-size: 13px; }
+.fix small { color: var(--muted); font-size: 12px; line-height: 1.4; }
+.fix .btn { white-space: nowrap; }
+details.sub { border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; }
+details.sub > summary { cursor: pointer; font-size: 13px; font-weight: 500; }
+details.sub[open] > summary { margin-bottom: 6px; }
+details.sec .fws { margin-top: 0; }
+#an-compliance .row h2 { margin: 0; }
+#an-compliance .row .muted { font-size: 12px; }
+.fws { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; margin-top: 10px; }
+.fw { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 6px; align-content: start; }
+.fw.pass { background: var(--good-soft); border-color: transparent; }
+.fw.fail { background: color-mix(in srgb, var(--bad) 10%, var(--surface)); border-color: transparent; }
+.fw-head { display: flex; gap: 10px; align-items: center; }
+.fw-head .badge { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; font-weight: 700; color: #fff; flex: none; }
+.fw.pass .badge { background: var(--good); }
+.fw.fail .badge { background: var(--bad); }
+.fw-head small { display: block; color: var(--muted); font-size: 12px; }
+.fw-status { font-size: 13px; font-weight: 500; }
+.fw.pass .fw-status { color: var(--good); }
+.fw.fail .fw-status { color: var(--bad); }
+.fw details > summary { cursor: pointer; font-size: 12px; color: var(--accent); }
+.fw ul { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 6px; }
+.fw li { display: grid; grid-template-columns: 18px 1fr; gap: 6px; font-size: 13px; }
+.fw li small { display: block; color: var(--muted); font-size: 12px; line-height: 1.4; }
+.fw li .ic { font-weight: 700; text-align: center; }
+.fw li.ok .ic { color: var(--good); }
+.fw li.fail .ic { color: var(--bad); }
+.fw li.review .ic { color: var(--warn); }
+.seg.src { margin: 4px 0 8px; }
+.seg.src button { font-size: 13px; padding: 6px 12px; }
+.seg.src button[aria-pressed=true] { background: color-mix(in srgb, var(--accent) 14%, var(--surface)); color: var(--fg); font-weight: 500; }
+.drop { display: grid; gap: 4px; justify-items: center; text-align: center; padding: 18px 14px; border: 1.5px dashed var(--line); border-radius: 10px; cursor: pointer; font-size: 14px; }
+.drop b { color: var(--accent); }
+.mock-row { margin: 8px 0 0; font-size: 13px; }
+.filters { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); display: grid; gap: 8px; font-size: 13px; }
+.filters .fhead small { color: var(--muted); font-size: 12px; margin-left: 4px; }
+.flt { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; display: grid; gap: 6px; }
+.fl-top { display: flex; gap: 8px; align-items: center; }
+.fl-top select { flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); padding: 4px 6px; font-size: 13px; }
+.chips { display: flex; flex-wrap: wrap; gap: 4px 6px; max-height: 150px; overflow: auto; }
+.chip { display: inline-flex; gap: 4px; align-items: center; border: 1px solid var(--line); border-radius: 999px; padding: 2px 8px; font-size: 12px; cursor: pointer; }
+.chip small { color: var(--muted); font-size: 11px; }
+.chip:has(input:checked) { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.filters .linkbtn { justify-self: start; padding: 0; }
+.mock-row .linkbtn { padding: 0; font-weight: 500; }
+.mock-row .muted { font-size: 12px; }
+.drop small { color: var(--muted); font-size: 12px; max-width: 46ch; }
+.drop:hover, .drop.over { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 5%, transparent); }
+.fileinfo { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; font-size: 13px; }
+.fileinfo b { word-break: break-all; }
+.ucols { display: grid; gap: 0; margin-top: 8px; font-size: 13px; }
+.ucol { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: 6px 8px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); }
+.ucol > div:first-child { grid-column: 1 / -1; }
+.ucol select.kind { color: var(--muted); }
+.ucol select.kind.changed { color: var(--fg); border-color: var(--accent); }
+.ucol .err { color: var(--bad); }
+.ucols .hdr { display: none; }
+.ucol select::before { content: none; }
+.ucol .n { font-weight: 500; word-break: break-word; }
+.ucol small { display: block; color: var(--muted); font-size: 12px; }
+.ucol select { width: 100%; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); padding: 4px 6px; font-size: 13px; }
+.ucol.leave .n { color: var(--muted); text-decoration: line-through; }
+.title-row h1 { margin: 0; }
+.gear { position: relative; display: inline-grid; place-items: center; width: 34px; height: 34px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--muted); cursor: pointer; }
+.gear:hover, .gear:focus-visible { color: var(--fg); background: var(--hover); }
+#an-settings-dot { position: absolute; top: 5px; right: 5px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+#an-settings .policy { margin-top: 0; }
+dialog.suggest .opt { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; display: grid; gap: 4px; justify-items: start; }
+dialog.suggest .opt p { color: var(--muted); font-size: 13px; line-height: 1.45; }
+dialog.suggest .foot { display: flex; gap: 8px; justify-content: flex-end; padding: 12px 16px; border-top: 1px solid var(--line); }
+dialog.preview .head h2 { margin: 0; font-size: 16px; }
+dialog.preview .head .muted { font-size: 13px; }
+dialog.preview .note { margin: 0; padding: 8px 16px; font-size: 13px; background: color-mix(in srgb, var(--bad) 10%, var(--surface)); color: var(--bad); }
+dialog.preview .body { overflow: auto; }
+dialog.preview table { border-collapse: collapse; font-size: 12px; width: max-content; min-width: 100%; }
+dialog.preview th, dialog.preview td { padding: 5px 10px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+dialog.preview th { position: sticky; top: 0; background: var(--surface); font-weight: 600; z-index: 1; }
+dialog.preview td.empty { color: var(--muted); }
+dialog.preview tr:hover td { background: var(--hover); }
+@media (max-width: 980px) { #an-verdict { position: static; box-shadow: none; } }
+.verdict .db { font-size: 12px; color: var(--muted); margin-top: 4px; }
+details.adv > summary { cursor: pointer; font-weight: 600; font-size: 15px; list-style: none; display: flex; gap: 8px; align-items: center; }
+details.adv > summary::-webkit-details-marker { display: none; }
+details.adv > summary::before { content: "▸"; color: var(--muted); transition: transform .1s; }
+details.adv[open] > summary::before { transform: rotate(90deg); }
+details.adv > summary small { font-weight: 400; color: var(--muted); font-size: 12px; }
+.checklist li.trivial { padding: 2px 0; color: var(--muted); }
+.checklist li.trivial small { display: inline; margin-left: 6px; }
+.checklist .tech { display: inline-block; margin-left: 6px; font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; font-weight: 400; vertical-align: 1px; }
+.checklist details > summary { cursor: pointer; list-style: none; }
+.checklist details > summary::-webkit-details-marker { display: none; }
+.checklist details > summary .more { color: var(--accent); font-size: 12px; margin-left: 6px; }
+.checklist ul { list-style: none; padding: 0; margin: 6px 0 0; display: grid; gap: 2px; }
+.checklist ul li { border-bottom: 0; padding: 2px 0; }
+.suppress-row { display: flex; gap: 6px; align-items: flex-start; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); font-size: 13px; }
+.suppress-row small { display: block; color: var(--muted); font-size: 12px; font-weight: 400; }
+.missing-opt { font-size: 12px; color: var(--muted); display: flex; gap: 6px; align-items: center; cursor: pointer; }
+.qsel .req, label.req { font-size: 13px; display: flex; gap: 6px; align-items: flex-start; font-weight: 400; }
+.qsel .req small, label.req small { display: block; color: var(--muted); font-size: 12px; }
+/* Phones: the verdict sits below the long step panel, so a bar pinned to the bottom shows it. */
+#an-mobilebar { display: none; }
+@media (max-width: 980px) {
+  #an-mobilebar { position: fixed; left: 8px; right: 8px; bottom: 8px; z-index: 6; display: flex; gap: 10px; align-items: center; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); box-shadow: 0 8px 24px -8px rgb(0 0 0 / .3); text-decoration: none; color: var(--fg); font-size: 13px; }
+  #an-mobilebar[hidden], #an-mobilebar.near { display: none; }
+  #an-mobilebar .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; background: var(--bad); }
+  #an-mobilebar.pass .dot { background: var(--good); }
+  #an-mobilebar b { font-weight: 600; }
+  #an-mobilebar .go { margin-left: auto; color: var(--accent); font-weight: 600; white-space: nowrap; }
+  main { padding-bottom: 96px; }
+}
+.verdict .btn[disabled] { opacity: .6; }
+.verdict { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; border-radius: 10px; padding: 14px 16px; border: 1px solid var(--line); background: var(--surface); }
+.verdict.pass { background: var(--good-soft); border-color: transparent; }
+.verdict.fail { background: color-mix(in srgb, var(--bad) 12%, var(--surface)); border-color: transparent; }
+.verdict .big { font-size: 17px; font-weight: 600; }
+.verdict.pass .big { color: var(--good); }
+.verdict.fail .big { color: var(--bad); }
+.verdict p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+.checklist { display: grid; gap: 4px; margin: 10px 0 0; padding: 0; list-style: none; }
+.checklist li { display: grid; grid-template-columns: 22px 1fr; gap: 6px; font-size: 13px; padding: 4px 0; border-bottom: 1px solid var(--line); }
+.checklist li:last-child { border-bottom: 0; }
+.checklist .ic { font-weight: 700; text-align: center; }
+.checklist .ok .ic { color: var(--good); }
+.checklist .no .ic { color: var(--bad); }
+.checklist .warn .ic { color: var(--warn); }
+.checklist small { display: block; color: var(--muted); }
+.steps { margin: 6px 0 0; padding-left: 18px; font-size: 13px; }
+table.plain { border-collapse: collapse; font-size: 13px; width: 100%; margin-top: 8px; }
+table.plain th, table.plain td { text-align: left; padding: 5px 10px 5px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+table.plain th { font-weight: 500; color: var(--muted); font-size: 12px; }
+table.plain td.num, table.plain th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.bad-n { color: var(--bad); font-weight: 600; }
+.hbar .fill.risk { background: var(--bad); }
+.scroll-x { overflow-x: auto; }
+.tile.risk .v { color: var(--bad); }
+.tile.safe .v { color: var(--good); }
+[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+
+<main>
+  <section class="view" id="view-anon">
+    <div class="row">
+      <div>
+        <a class="back-link" href="index.html">← How unique are you?</a>
+        <div class="title-row"><h1>Medical Data Anonymizer</h1>
+          <button class="gear" id="an-settings-btn" type="button" aria-label="Release policy settings" title="Release policy: the safety rules every file must meet"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1.08-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1.08 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.6.85 1 1.51 1H21a2 2 0 1 1 0 4h-.09c-.66 0-1.25.4-1.51 1Z"/></svg><span id="an-settings-dot" hidden></span></button>
+          <button class="gear" id="an-help-btn" type="button" aria-label="How it works: the user guide" title="How it works"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="12" cy="12" r="9.2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M9.4 9.3a2.7 2.7 0 0 1 5.2.9c0 1.8-2.6 2.3-2.6 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="17.2" r="1.1" fill="currentColor"/></svg></button></div>
+        <p class="sub">Open a CSV, choose what to share, and check it can't be traced back to a person before you export it. The anonymized CSV can only be downloaded when every required check passes. Your file is read in this page only: nothing is uploaded or stored.</p>
+      </div>
+    </div>
+    <nav class="crumbs" id="an-crumbs" aria-label="Setup steps"></nav>
+    <div class="anon-layout">
+      <div class="stack">
+        <div class="panel step-panel" data-step="1">
+          <h2>1 · Choose your data</h2>
+          <div class="seg src" role="group" aria-label="Where the data comes from" hidden>
+
+          </div>
+          <div id="an-src-registry" hidden>
+            <p class="sub">Which kinds of users are in the file.</p>
+            <div class="checks-row" id="an-roles"></div>
+          </div>
+          <div id="an-src-upload">
+            <label class="drop" id="an-drop"><input type="file" accept=".csv,.tsv,.txt,text/csv" id="an-file" hidden>
+              <b>Choose a CSV file</b> or drop it here
+              <small>First row = column names; comma, semicolon or tab separated. The file is read in this page only: never uploaded, never stored, gone when you close the tab.</small></label>
+            <p class="mock-row">No file at hand? <button class="linkbtn" id="an-mock" type="button">Use mock data</button> <span class="muted">500 made-up clinic patients, with names, emails, postcodes and full dates to anonymize.</span></p>
+            <div id="an-file-info"></div>
+          </div>
+          <div id="an-filters"></div>
+          <div class="step-nav" data-nav="1"></div>
+        </div>
+        <div class="panel step-panel" data-step="2">
+          <h2>2 · Select columns to share</h2>
+          <div id="an-cols-upload" hidden></div>
+          <div id="an-cols-registry">
+          <p class="sub">Tick the profile columns the researcher gets, then the survey answers.</p>
+          <div class="cols" id="an-cols"></div>
+          <h3>Survey answers <span class="muted" id="an-q-count" style="font-weight:400"></span></h3>
+          <p class="sub" style="margin-top:2px">Tick a whole category, a whole challenge, or single questions. Click a row's name to open it.</p>
+          <div class="row qtools">
+            <input id="an-q-search" type="search" placeholder="Filter, e.g. smoking, sleep, alcohol…" aria-label="Filter survey questions">
+            <button class="linkbtn" id="an-q-expand" type="button">Open all</button>
+            <button class="linkbtn" id="an-q-clear" type="button">Clear survey answers</button>
+          </div>
+          <div class="qtree" id="an-qtree"></div>
+          </div>
+          <div class="step-nav" data-nav="2"></div>
+        </div>
+        <div class="panel step-panel" data-step="3">
+          <h2>3 · Configure column details</h2>
+          <p class="sub">Less detail makes people harder to single out. For age and year of diagnosis, “Shown value” sets how wide the ranges are, and “Who's included” limits the file to part of the range.</p>
+          <p class="sub"><b style="color:var(--accent)">Profile columns</b> are things others could know (a neighbour, employer, social media), so the tool checks that no combination of them singles anyone out. <b style="color:var(--good)">Survey answers</b> are private: the tool checks they can't be guessed from a person's group.</p>
+          <div class="fields" id="an-fields"></div>
+          <div class="suppress-row">
+            <label class="toggle"><input type="checkbox" id="an-suppress"> <span>Remove people in groups smaller than <span id="an-sup-k">5</span><small id="an-sup-note"></small></span></label>
+            <i class="info" tabindex="0" data-tip="Instead of making columns less detailed, leave out the few people whose combination of profile values is too rare. Only allowed up to the 'Max share removed' limit in the settings (gear next to the title), because removing many people would bias the research.">i</i>
+          </div>
+          <div class="step-nav" data-nav="3"></div>
+        </div>
+        <div class="panel step-panel" data-step="4">
+          <h2>4 · Review and export</h2>
+          <div id="an-review"></div>
+          <div class="step-nav" data-nav="4"></div>
+        </div>
+      </div>
+      <div class="stack" id="an-results">
+        <div id="an-verdict-sentinel" aria-hidden="true" style="height:1px;margin-bottom:-17px"></div>
+        <div class="verdict" id="an-verdict"><span class="muted">Loading…</span></div>
+        <a id="an-mobilebar" href="#an-verdict" hidden><span class="dot"></span><span id="an-mobilebar-text"></span><span class="go">See checks ↓</span></a>
+        <div class="panel" id="an-sections"></div>
+      </div>
+    </div>
+  </section>
+</main>
+<div id="tooltip" role="tooltip"></div>
+<dialog class="modal preview" id="an-preview" aria-labelledby="an-preview-title"></dialog>
+<dialog class="modal suggest" id="an-suggest-dlg" aria-labelledby="an-suggest-title"></dialog>
+<dialog class="modal help" id="an-help" aria-labelledby="an-help-title">
+  <div class="head"><h2 id="an-help-title">How the Medical Data Anonymizer works</h2><span class="spacer" style="flex:1"></span><button class="btn small" id="an-help-close" type="button" autofocus>Close</button></div>
+  <div class="hbody"><nav class="toc" id="an-help-toc" aria-label="Guide contents"></nav><article class="doc" id="an-help-doc"><!-- The user guide. It's also built into the app: the "?" button next to the title opens it.
+     Each "## " heading becomes an entry in the help's table of contents. -->
+
+<h2>What this tool does</h2>
+<p>The Medical Data Anonymizer turns a CSV with personal data into a version you can share for
+research, and checks that nobody in it can be identified.</p>
+<p>You open a file, decide which columns to share and how detailed each one is, and the tool keeps
+checking the result. When every required check passes, you can download the anonymized CSV.</p>
+<p><strong>Your data stays on your computer.</strong> The file is read inside this page. It&#39;s never uploaded,
+never stored, and it&#39;s gone when you close the tab. The page can&#39;t make any network requests at
+all, so it can&#39;t send your data anywhere, even by mistake.</p>
+<h2>Quick start</h2>
+<ol>
+<li><strong>Choose your data</strong>: open a CSV, or click <strong>Use mock data</strong> to try the tool with 500 made-up patients.</li>
+<li><strong>Select columns to share</strong>: check the type and the use of each column. The tool pre-fills a guess.</li>
+<li><strong>Configure column details</strong>: make columns less detailed where needed, for example age in 10-year ranges.</li>
+<li><strong>Review and export</strong>: when the verdict says <strong>Safe to release</strong>, click <strong>Download extract (CSV)</strong>.</li>
+</ol>
+<p>Not safe yet? Press <strong>Suggest safer settings</strong>, or open a red item in the safety checklist and use
+one of its fixes.</p>
+<p>You can move between the steps at any time with the bar at the top. The verdict and the safety
+checklist on the right update as you change anything.</p>
+<h2>The one idea behind it</h2>
+<p>Someone who already knows a few things about a person (age, sex, town) could look for them in a
+shared file. If only one row matches, they&#39;ve found that person, and can read everything else in
+that row.</p>
+<p>So the tool sorts every row into <strong>groups</strong>: rows that look the same on the things others could know.
+A file is safe when:</p>
+<ul>
+<li><strong>every group is big enough</strong> (at least 5 rows by default), so nobody can be picked out, and</li>
+<li><strong>the private answers vary inside each group</strong>, so knowing someone&#39;s group doesn&#39;t reveal their answer.</li>
+</ul>
+<p><strong>Example.</strong> A file shares age, sex and city. Only one 87-year-old woman lives in Kiel, so she
+is a group of one: anyone who knows her finds her row. Showing age in 10-year ranges (80–89) puts
+her in a group with other women in their 80s in Kiel, and she can no longer be singled out.</p>
+<h2>Step 1 · Choose your data</h2>
+<p><strong>The file.</strong> A CSV whose first row holds the column names. Commas, semicolons and tabs all work
+as separators. Excel exports with accented characters (é, ü) are read correctly. Choose the file,
+or drag it onto the box.</p>
+<p><strong>Empty values.</strong> Blank cells, and the words NA, N/A, null, none, NaN, unknown, &quot;-&quot; and &quot;?&quot;, count as empty.</p>
+<p><strong>Mock data.</strong> <strong>Use mock data</strong> loads 500 made-up clinic patients. They have names, emails,
+postcodes, full dates and clinical values, so you can see everything the tool does without real data.</p>
+<p><strong>Only include rows where…</strong> (optional) keeps just the rows you want, for example
+<em>Subtype is Tremor-dominant</em>. Pick a column, then tick the values to keep. Each value shows how
+many rows have it. This works for text columns with up to 60 different values, and the column
+doesn&#39;t have to be shared.</p>
+<p><strong>Forget this file</strong> removes it from the page.</p>
+<h2>Step 2 · Select columns to share</h2>
+<p>Each column has two settings. The tool fills in a guess and says why, so check every row.</p>
+<h3>Type: what the values are</h3>
+<table>
+<thead>
+<tr>
+<th>Type</th>
+<th>Recognised when</th>
+<th>What you can do with it</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Number</strong></td>
+<td>90% of the values are numbers (&quot;26,5&quot; counts)</td>
+<td>Share in ranges, limit to a range</td>
+</tr>
+<tr>
+<td><strong>Date</strong></td>
+<td>90% are dates (2019-05-03, 03.05.2019, 03/05/2019)</td>
+<td>Shared as the <strong>year only</strong>, in ranges</td>
+</tr>
+<tr>
+<td><strong>Postcode</strong></td>
+<td>the name contains zip, postcode, postal or PLZ</td>
+<td>Keep the first 3 or 2 characters</td>
+</tr>
+<tr>
+<td><strong>Text / category</strong></td>
+<td>anything else</td>
+<td>Group rare values as &quot;other&quot;</td>
+</tr>
+<tr>
+<td><strong>ID / identifier</strong></td>
+<td>the name says ID, record or case number, or every row is different</td>
+<td>Usually left out</td>
+</tr>
+</tbody></table>
+<p>If the guess is wrong, change it. The detail options in step 3 follow the type. If the values don&#39;t
+fit the new type (for example &quot;Date&quot; on a column of names), the tool says so and nothing changes.</p>
+<h3>How it&#39;s used</h3>
+<ul>
+<li><strong>Others could know it</strong>: a neighbour, employer or social media could know this about a person
+(age, sex, city, postcode, job). These columns <strong>form the groups</strong>, and Suggest makes them less
+detailed when needed.</li>
+<li><strong>Private (research data)</strong>: only the person told you this (a diagnosis, a test result, an
+answer). It isn&#39;t used to form groups. Instead the answers inside each group must vary, so
+nobody&#39;s answer can be worked out.</li>
+<li><strong>Leave out</strong>: not in the file and not checked. Use it for names, contact details and
+anything the research doesn&#39;t need.</li>
+</ul>
+<p><strong>Tip:</strong> don&#39;t mark something private if others could know it. The file would look safer than it is.</p>
+<p><strong>Identifiers.</strong> Columns that look like names, emails, phone numbers, addresses or ID numbers start
+as <strong>Leave out</strong>. You can still share an ID, for example when the recipient may hold pseudonymous
+data under an agreement. The checklist then warns that the file is <em>pseudonymous, not anonymous</em>.</p>
+<p>A column with the same value on every row starts as <strong>Leave out</strong>, because it tells the researcher nothing.</p>
+<h2>Step 3 · Configure column details</h2>
+<p>Less detail makes people harder to single out. Each shared column has a card.</p>
+<ul>
+<li><strong>Shown value</strong> (numbers and dates): the width of the ranges the researcher sees. At 1 the
+exact value is shared. At 10, ages appear as 60–69, 70–79…; dates are always shared as years.</li>
+<li><strong>Who&#39;s included</strong> (numbers and dates): drag the two handles to keep only part of the range, for
+example ages 18–89. Rows outside the range, or without a value, are left out.</li>
+<li><strong>Detail level</strong> (text and postcodes): exact value, the first 3 or 2 characters of a postcode,
+or <strong>rare values as &quot;other&quot;</strong>. That last option replaces values that fewer than <em>k</em> rows have
+(5 by default) with &quot;other&quot;.</li>
+<li><strong>Leave out people who didn&#39;t give this</strong>: drops rows where this column is empty.</li>
+<li><strong>Only rows with a value in every private column</strong>: useful when many rows have private columns
+left empty. Groups made only of empty answers can&#39;t vary, so the check fails.</li>
+<li><strong>Remove people in groups smaller than k</strong>: instead of making columns less detailed, leave out
+the few rows whose combination is too rare. It&#39;s only allowed up to a limit (5% of rows by default),
+because removing many rows would bias the research.</li>
+</ul>
+<h2>Step 4 · Review and export</h2>
+<p>Step 4 lists every choice you made, each with a <strong>Change</strong> link back to its step.</p>
+<h3>The verdict</h3>
+<p>At the top on the right: <strong>Safe to release</strong> or <strong>Not safe to release yet</strong>, with the number of rows,
+how many are one of a kind, and how many are in groups that are too small. It stays visible while
+you scroll.</p>
+<ul>
+<li><strong>Suggest safer settings</strong>: let the tool make columns less detailed for you (see below).</li>
+<li><strong>Preview data</strong>: the first 200 rows exactly as the file would contain them. This works even before it&#39;s safe.</li>
+<li><strong>Download extract (CSV)</strong>: only enabled when every required check passes.</li>
+</ul>
+<h3>The safety checklist</h3>
+<p>Four questions. Each one is a single line until you open it; red means it needs fixing.</p>
+<p><strong>1. Can someone be picked out?</strong></p>
+<table>
+<thead>
+<tr>
+<th>Check</th>
+<th>Passes when</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>At least 20 people</td>
+<td>the file has at least 20 rows (small files are easy to re-identify)</td>
+</tr>
+<tr>
+<td>Everyone is in a group of k or more</td>
+<td>the smallest group has at least k rows (k-anonymity)</td>
+</tr>
+<tr>
+<td>Nobody is one of a kind</td>
+<td>no row has a combination of values nobody else has</td>
+</tr>
+<tr>
+<td>Low overall risk</td>
+<td>groups ÷ rows is 10% or less (average re-identification risk)</td>
+</tr>
+<tr>
+<td>Removed at most 5%</td>
+<td>only when you remove small groups</td>
+</tr>
+</tbody></table>
+<p>Open it to see <strong>What drives the risk</strong> (how many rows would still be one of a kind with less
+detail or without each column), the <strong>Rarest combinations</strong>, <strong>Group sizes</strong>, and <strong>ways to fix it</strong>.</p>
+<p><strong>2. Can private answers be guessed?</strong> A table of every private column:</p>
+<ul>
+<li><strong>Variety</strong>: the fewest different answers inside any group. It must be at least 2.
+<em>Example:</em> if all 6 women aged 70–79 from Germany answered &quot;yes&quot; to &quot;Do you smoke?&quot;, variety is 1,
+so anyone who knows a neighbour is in that group knows she smokes. One &quot;no&quot;, or one empty answer,
+makes it 2.</li>
+<li><strong>Gap</strong>: how far a group&#39;s answers are from everyone&#39;s, from 0 (same mix) to 1 (completely
+different). Above 0.35 it&#39;s a <strong>warning</strong> only. <em>Example:</em> overall 20% said &quot;yes&quot; to chemical
+exposure, but 90% of &quot;men, 60–79, Germany&quot; did, so the gap is 0.7. Nobody&#39;s answer is revealed,
+but &quot;yes&quot; is very likely. It may also be exactly what the research is about, so check whether
+such a likely answer could harm someone.</li>
+</ul>
+<p><strong>3. Are identifiers left out?</strong> Confirms no ID column is shared, or warns if you chose to share one.</p>
+<p><strong>4. Regulations.</strong> GDPR and HIPAA indicators (see below).</p>
+<h3>Fixing problems</h3>
+<p>Open a red item: under <strong>Ways to fix it</strong> each fix says what it costs the researcher, with a button:</p>
+<ul>
+<li><strong>Make columns less detailed</strong> runs Suggest.</li>
+<li><strong>Leave out the N people in groups smaller than k</strong> shows the share it needs and raises the limit to exactly that.</li>
+<li><strong>Remove the column</strong> that causes the most risk, or a private column that gives answers away.</li>
+</ul>
+<h3>What Suggest does</h3>
+<p>Suggest follows fixed rules. There&#39;s no AI and no randomness, so the same file always gets the same suggestions.</p>
+<ol>
+<li>If leaving out the rows in small groups is enough, within your limit, it does that.</li>
+<li>Otherwise it tries one small step on every column others could know: a wider range
+(1 → 2 → 3 → 4 → 5 → 6 → 8 → 10 → 12 → 15 → 20), a shorter postcode, or rare values as &quot;other&quot;. It keeps
+the step that helps most, and repeats.</li>
+<li>It stops when the file is safe, or when nothing can be made less detailed any more. Changes that
+turned out not to help are undone.</li>
+</ol>
+<p>Suggest never leaves out people beyond your limit and never removes a column on its own. Those
+change what the researcher gets, so it offers them as buttons for you to decide. <strong>Undo these changes</strong>
+puts everything back.</p>
+<h3>The exported file</h3>
+<ul>
+<li><strong>One row per person</strong>, in random order, with a new random <strong>study_id</strong> (S00001, S00002…) that
+can&#39;t be traced back to the original rows.</li>
+<li><strong>Columns:</strong> first the ones others could know, then the private ones, under their original names.</li>
+<li><strong>Values as configured:</strong> ranges like <code>60–69</code>, years for dates, shortened postcodes like <code>101…</code>,
+&quot;other&quot; for rare values. Empty values show as <code>(not given)</code>.</li>
+<li><strong>Left-out columns, and removed rows, are not in the file.</strong></li>
+<li><strong>File name:</strong> <code>&lt;your file&gt;-anonymized-&lt;date&gt;.csv</code>.</li>
+</ul>
+<h2>Release policy (the gear)</h2>
+<p>The gear next to the title opens the safety rules every file must meet. A dot on the gear means
+you&#39;ve changed something from the defaults. <strong>Back to defaults</strong> restores them.</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it means</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>k: smallest group</strong></td>
+<td>5</td>
+<td>Every combination of the columns others could know must be shared by at least k rows. 5 is common; use 10+ for small or sensitive groups. This k is also used by &quot;remove people in groups smaller than k&quot; and &quot;rare values as other&quot;.</td>
+</tr>
+<tr>
+<td><strong>l: different answers</strong></td>
+<td>2</td>
+<td>Each group needs at least l different answers in every private column. 3 is stricter.</td>
+</tr>
+<tr>
+<td><strong>t: max gap</strong></td>
+<td>0.35</td>
+<td>Above this, a group&#39;s answers count as noticeably different from everyone&#39;s. Warning only.</td>
+</tr>
+<tr>
+<td><strong>Max average risk</strong></td>
+<td>0.1</td>
+<td>Groups ÷ rows must not exceed this (10%).</td>
+</tr>
+<tr>
+<td><strong>Min people</strong></td>
+<td>20</td>
+<td>The smallest file you may export.</td>
+</tr>
+<tr>
+<td><strong>Max share removed</strong></td>
+<td>0.05</td>
+<td>The most rows &quot;remove people in groups smaller than k&quot; may leave out (5%).</td>
+</tr>
+</tbody></table>
+<h2>Regulations: GDPR and HIPAA</h2>
+<p>The <strong>Regulations</strong> item checks the file <em>as it would be exported</em> against two frameworks. It&#39;s an
+indicator, <strong>not legal advice</strong>: your data protection officer makes the final call.</p>
+<p><strong>GDPR (EU).</strong> Data is anonymous only if people can&#39;t be re-identified by means reasonably likely to
+be used. The EU data protection authorities test three risks:</p>
+<ul>
+<li><strong>Singling out</strong>: nobody can be picked out (the group checks). An ID column you share fails this test.</li>
+<li><strong>Inference</strong>: private answers can&#39;t be deduced from a group (variety and gap).</li>
+<li><strong>Linkability</strong>: rows can&#39;t be joined back to people. Random study IDs and shuffled rows help.
+Whether the recipient holds other data to join on can&#39;t be checked here, so you confirm it.</li>
+<li><strong>Data minimisation</strong>: only what the research needs. You confirm it.</li>
+</ul>
+<p><strong>HIPAA Safe Harbor (US).</strong> A fixed list of 18 identifier types. It only matters for US healthcare
+recipients. The tool checks what the data can show:</p>
+<ul>
+<li>no names, contact details or ID numbers;</li>
+<li>no location smaller than a state: exact postcodes fail; the first 3 digits are allowed only where
+that area has more than 20,000 people;</li>
+<li>dates as years only;</li>
+<li><strong>ages over 89 grouped as 90+</strong>: an age or birth year that is entirely 90 or older fails;</li>
+<li>no other unique codes.</li>
+</ul>
+<p>Photos, biometrics, names hidden in free text, and &quot;no actual knowledge that the data could identify
+someone&quot; can&#39;t be checked automatically, so they&#39;re listed for you to confirm.</p>
+<h2>Glossary</h2>
+<ul>
+<li><strong>Group</strong> (equivalence class): rows with the same values in every column others could know.</li>
+<li><strong>k-anonymity</strong>: every group has at least k rows.</li>
+<li><strong>l-diversity</strong>: every group has at least l different values in each private column.</li>
+<li><strong>t-closeness</strong>: each group&#39;s answers are close (within t) to the answers of the whole file.</li>
+<li><strong>Quasi-identifier</strong>: a column others could know, which helps identify someone in combination with others.</li>
+<li><strong>Generalization</strong>: showing less detail (ranges, shorter postcodes, &quot;other&quot;).</li>
+<li><strong>Suppression</strong>: leaving out the rows that are too rare.</li>
+<li><strong>Pseudonymous vs anonymous</strong>: pseudonymous data can still be linked to a person, for example
+through an ID or a key someone keeps. It stays personal data under GDPR. Anonymous data can&#39;t be linked back.</li>
+</ul>
+<h2>Questions and problems</h2>
+<p><strong>Suggest can&#39;t make it safe.</strong> It then names the remaining options. Usually these are leaving out a few
+more rows (raise the limit), removing the column that drives the risk (often a rare category such
+as an unusual sex value or a small city), or removing a private column with a rare answer.</p>
+<p><strong>&quot;N values couldn&#39;t be read as numbers/dates&quot;.</strong> Those cells count as empty. Check the column&#39;s type
+in step 2, or fix the values in the file.</p>
+<p><strong>My postcode column shows ranges.</strong> It was recognised as a number. Set its type to <strong>Postcode</strong>.</p>
+<p><strong>Strange characters (Ã©).</strong> The file isn&#39;t UTF-8. The tool tries the Windows encoding Excel uses,
+but saving the file as &quot;CSV UTF-8&quot; in Excel avoids the problem.</p>
+<p><strong>Large files.</strong> Everything happens in the browser&#39;s memory. Files up to about 200,000 rows work;
+beyond that the page gets slow.</p>
+<p><strong>Reloading the page</strong> forgets the file. The tool only remembers which step you were on.</p>
+</article></div>
+</dialog>
+<dialog class="modal suggest" id="an-settings" aria-labelledby="an-settings-title">
+  <div class="head"><h2 id="an-settings-title">Release policy</h2><span class="muted">The safety rules every file must meet. Hover or tab to <i class="info">i</i> for what each one means.</span></div>
+  <div class="mbody"><div class="policy" id="an-policy"></div></div>
+  <div class="foot"><button class="btn" id="an-policy-reset" type="button">Back to defaults</button><button class="btn primary" id="an-settings-close" type="button" autofocus>Done</button></div>
+</dialog>
+
+<script>
+(()=>{var B={k:5,l:2,t:.35,maxSuppression:.05,minCohort:20,maxAvgRisk:.1},L="(not given)",W=new Date,ne=(e,t,s=0)=>{if(t<=1)return String(e);let n=s+Math.floor((e-s)/t)*t;return`${n}\u2013${n+t-1}`},ve=[1,2,3,4,5,6,8,10,12,15,20],te=e=>{let t=new Date(String(e)),s=W.getFullYear()-t.getFullYear();return W<new Date(W.getFullYear(),t.getMonth(),t.getDate())&&s--,s},A=e=>(t,s)=>t==null||t===""?L:e(t,s),O={label:"Rare values as \u201Cother\u201D",rare:!0,fn:A(String)},ke=Object.fromEntries(Object.entries({Europe:"AD AL AT AX BA BE BG BY CH CY CZ DE DK EE ES FI FO FR GB GG GI GR HR HU IE IM IS IT JE LI LT LU LV MC MD ME MK MT NL NO PL PT RO RS RU SE SI SJ SK SM UA VA XK",Asia:"AE AF AM AZ BD BH BN BT CN GE HK ID IL IN IQ IR JO JP KG KH KP KR KW KZ LA LB LK MM MN MO MV MY NP OM PH PK PS QA SA SG SY TH TJ TL TM TR TW UZ VN YE",Africa:"AO BF BI BJ BW CD CF CG CI CM CV DJ DZ EG EH ER ET GA GH GM GN GQ GW KE KM LR LS LY MA MG ML MR MU MW MZ NA NE NG RE RW SC SD SL SN SO SS ST SZ TD TG TN TZ UG YT ZA ZM ZW","North America":"AG AI AW BB BL BM BQ BS BZ CA CR CU CW DM DO GD GL GP GT HN HT JM KN KY LC MF MQ MS MX NI PA PM PR SV SX TC TT US VC VG VI","South America":"AR BO BR CL CO EC FK GF GY PE PY SR UY VE",Oceania:"AS AU CK FJ FM GU KI MH MP NC NF NR NU NZ PF PG PN PW SB TK TO TV VU WF WS"}).flatMap(([e,t])=>t.split(" ").map(s=>[s,e]))),oe={age:{label:"Age (from date of birth)",column:"dateOfBirth",defaultUse:"qi",levels:[{label:"Age in bands",banded:!0,fn:A((e,t)=>ne(te(e),t.band??5,t.min??0))}],numeric:{unit:"years old",rangeLabel:"Ages",lo:18,hi:100,value:te,bandLabel:e=>e<=1?"Exact age":`${e}-year ranges`}},yearDiagnosed:{label:"Year of diagnosis",column:"yearDiagnosed",defaultUse:"qi",levels:[{label:"Year in bands",banded:!0,fn:A((e,t)=>ne(Number(e),t.band??5,t.min??0))}],numeric:{unit:"",rangeLabel:"Diagnosed",lo:1970,hi:new Date().getFullYear(),value:Number,bandLabel:e=>e<=1?"Exact year":`${e}-year ranges`}},gender:{label:"Gender",column:"gender",defaultUse:"qi",levels:[{label:"Exact value",fn:A(String)},O]},country:{label:"Country",column:"country",defaultUse:"qi",levels:[{label:"Exact value",fn:A(String)},O,{label:"Continent",fn:A(e=>ke[String(e).trim().toUpperCase()]??"Other")}]},ethnicity:{label:"Ethnicity",column:"ethnicity",defaultUse:"qi",levels:[{label:"Exact value",fn:A(String)},O,{label:"Central European / other",fn:A(e=>e==="centralEuropean"?"centralEuropean":"other")}]},role:{label:"Role",column:"role",defaultUse:"qi",levels:[{label:"Exact value",fn:A(String)},{label:"Patient / not a patient",fn:A(e=>e==="pd-patient"?"patient":"not a patient")}]}};var $e=[{label:"Exact answer",fn:A(String)},{...O,label:"Rare answers as \u201Cother\u201D"}],_=new Map,S=e=>oe[e]??_.get(e),q=e=>e.startsWith("q:")?$e:S(e)?.levels,C=e=>{let t=q(e.id)[e.level];return t.banded?S(e.id).numeric.bandLabel(e.band??5):t.label};function Z(e){let t=q(e.id);if(t[e.level].banded){let s=S(e.id)?.numeric?.scale??1,n=ve.map(r=>r*s).find(r=>r>(e.band??5));if(n)return{...e,band:n}}return e.level+1>=t.length?null:t[e.level+1].banded?{...e,level:e.level+1,band:2}:{...e,level:e.level+1}}var ie="(not given)";async function Re(e,t,s){let n=[],r=`d."userId" not in (${t})`;s.roles.length&&(n.push(s.roles),r+=` and d.role = any($${n.length})`);let l=(await e.query(`
+    select d."userId", to_char(d."dateOfBirth", 'YYYY-MM-DD') as "dateOfBirth", d."yearDiagnosed", d.gender::text as gender,
+      d.country, d.ethnicity, d.role from user_data d where ${r}`,n)).rows,i=new Map(l.map(o=>[o.userId,{userId:o.userId,profile:o,answers:new Map}])),c=s.fields.filter(o=>o.id.startsWith("q:")).map(o=>o.id.slice(2));if(c.length){let o=(await e.query(`
+      select r."userId", a->>'questionId' as q, a->'values'->>0 as v
+      from survey_response r, json_array_elements(r.response->'answers') a
+      where a->>'questionId' = any($1) order by r."createdTs"`,[c])).rows;for(let u of o)i.get(u.userId)?.answers.set(`q:${u.q}`,u.v)}return re([...i.values()],s)}function re(e,t){let s=t.fields.filter(n=>n.id.startsWith("q:")).map(n=>n.id.slice(2));for(let n of t.fields){let r=S(n.id)?.numeric;if(!r||n.min==null&&n.max==null)continue;let l=S(n.id).column;e=e.filter(i=>{let c=i.profile[l];if(c==null||c==="")return!1;let o=r.value(c);return(n.min==null||o>=n.min)&&(n.max==null||o<=n.max)})}for(let n of t.filters??[]){let r=S(n.id)?.column;if(!r)continue;let l=new Set(n.values);e=e.filter(i=>{let c=i.profile[r];return l.has(c==null||c===""?ie:String(c))})}for(let n of t.fields){if(!n.dropMissing||!S(n.id))continue;let r=S(n.id).column;e=e.filter(l=>l.profile[r]!=null&&l.profile[r]!=="")}if(t.requireAnswers&&s.length&&(e=e.filter(n=>s.every(r=>n.answers.has(`q:${r}`)))),t.requireAnswers&&t.upload){let n=t.fields.filter(r=>r.use==="sensitive"&&_.has(r.id)).map(r=>r.id);e=e.filter(r=>n.every(l=>r.profile[l]!=null&&r.profile[l]!==""))}return e}function se(e,t){let s=q(t.id);if(!s)return null;let n=s[Math.min(Math.max(0,t.level),s.length-1)],r=t.id.startsWith("q:")?e.answers.get(t.id):e.profile[S(t.id).column];return n.fn(r,t)}function j(e,t,s=B.k){let n=t.filter(o=>o.use==="qi"&&q(o.id)),r=t.filter(o=>o.use==="sensitive"&&q(o.id)),l=new Map;for(let o of[...n,...r]){let u=q(o.id);if(!u[Math.min(o.level,u.length-1)].rare)continue;let g=new Map;for(let f of e){let p=se(f,o);p!=null&&p!==L&&g.set(p,(g.get(p)??0)+1)}l.set(o,new Set([...g].filter(([,f])=>f<s).map(([f])=>f)))}let i=(o,u)=>{let g=se(o,u);return g!=null&&l.get(u)?.has(g)?"other":g};return{recs:e.map(o=>{let u=n.map(g=>i(o,g)??L);return{qi:u,key:u.join(""),sens:r.map(g=>i(o,g))}}),qiFields:n,sensFields:r}}function K(e,t,s){let n=new Map;for(let p of e){let h=n.get(p.key);h?h.push(p):n.set(p.key,[p])}let r=e.length,l=[...n.values()].map(p=>p.length),i=l.length?Math.min(...l):0,c=l.filter(p=>p===1).length,o=l.filter(p=>p<s.k).reduce((p,h)=>p+h,0),g=[["1",1,1],["2",2,2],["3\u20134",3,4],["5\u20139",5,9],["10\u201319",10,19],["20+",20,1/0]].map(([p,h,m])=>{let v=l.filter(w=>w>=h&&w<=m);return{label:p,groups:v.length,people:v.reduce((w,y)=>w+y,0)}}),f=Array.from({length:t},(p,h)=>{let m=$=>$.sens[h]??L,v=new Map;for(let $ of e)v.set(m($),(v.get(m($))??0)+1);let w=e.length-(v.get(L)??0),y=1/0,a=0,b=0,I=0;for(let $ of n.values()){let M=new Map;for(let x of $)M.set(m(x),(M.get(m(x))??0)+1);if(M.size===1&&M.has(L))continue;y=Math.min(y,M.size),M.size<s.l&&(b+=$.length);let N=0;for(let[x,D]of v)N+=Math.abs((M.get(x)??0)/$.length-D/e.length);N/=2,a=Math.max(a,N),N>s.t&&(I+=$.length)}return{l:y===1/0?null:y,t:w?+a.toFixed(3):null,answered:w,distinct:v.size-(v.has(L)?1:0),peopleInLowLGroups:b,peopleInHighTGroups:I}});return{n:r,groups:n.size,k:i,unique:c,uniquePct:r?c/r:0,atRisk:o,atRiskPct:r?o/r:0,maxRisk:i?1/i:1,avgRisk:r?n.size/r:0,classSizes:g,sensitive:f,groupMap:n}}function U(e,t){let{recs:s,qiFields:n,sensFields:r}=j(e,t.fields,t.policy.k),l=K(s,r.length,t.policy),i=l,c=0;if(t.suppress){let o=s.filter(u=>(l.groupMap.get(u.key)?.length??0)>=t.policy.k);c=s.length-o.length,i=K(o,r.length,t.policy)}return{recs:s,qiFields:n,sensFields:r,before:l,after:i,suppressed:c}}function G(e,t){let s=t.policy,n=e.after,r=e.before.n?e.suppressed/e.before.n:0,l=[];l.push({id:"direct",label:"No names, emails or IDs",ok:!0,trivial:!0,detail:"Never shared; each row gets a random study ID."}),l.push({id:"fields",label:"Columns chosen",ok:e.qiFields.length+e.sensFields.length>0,trivial:!0,detail:t.upload?`${e.qiFields.length} that others could know, ${e.sensFields.length} private.`:`${e.qiFields.length} profile, ${e.sensFields.length} survey answer${e.sensFields.length===1?"":"s"}.`}),l.push({id:"cohort",label:`At least ${s.minCohort} people`,ok:n.n>=s.minCohort,detail:`${n.n} people in the extract.`}),l.push({id:"k",label:`Everyone is in a group of ${s.k} or more`,tech:"k-anonymity",ok:n.n>0&&n.k>=s.k,detail:n.n?`People with the same profile values form a group. The smallest group has ${n.k} ${n.k===1?"person":"people"}.`:"Empty extract."}),l.push({id:"unique",label:"Nobody is one of a kind",ok:n.unique===0,detail:`${n.unique} ${n.unique===1?"person has":"people have"} a combination of profile values nobody else has.`}),l.push({id:"avgRisk",label:`Low overall risk (${Math.round(s.maxAvgRisk*100)}% or less)`,tech:"average re-identification risk",ok:n.avgRisk<=s.maxAvgRisk,detail:`${(n.avgRisk*100).toFixed(1)}%: ${n.groups} groups for ${n.n} people.`}),e.sensFields.forEach((i,c)=>{let o=n.sensitive[c],u=E(i.id),g=n.n&&o.answered/n.n<.5?` Only ${o.answered} of ${n.n} people answered this question, so many groups contain just \u201Cno answer\u201D: tick \u201COnly people who answered every chosen question\u201D in step 3.`:"";l.push({id:`l:${i.id}`,label:`Answers vary within each group: ${u}`,tech:`l-diversity \u2265 ${s.l}`,ok:o.l==null||o.l>=s.l,detail:o.l==null?"Nobody answered.":`Every group must contain at least ${s.l} different answers (no answer counts as one). The least varied has ${o.l}; ${o.peopleInLowLGroups} people are in groups below ${s.l}.${o.l<s.l?g:""}`}),l.push({id:`t:${i.id}`,label:`Groups answer like everyone else: ${u}`,tech:`t-closeness \u2264 ${s.t}`,ok:o.t==null||o.t<=s.t,severity:"warn",detail:o.t==null?"Nobody answered.":`Largest gap between a group's answers and everyone's: ${o.t} (0 = same mix, 1 = completely different). ${o.peopleInHighTGroups} people are in groups above ${s.t}. A warning only.`})});for(let i of we(e,t))l.push({id:`id:${i}`,label:`\u201C${i}\u201D is an ID and is shared as is`,ok:!1,severity:"warn",detail:"Each value points to one person, so the file is pseudonymous, not anonymous. Only share it if the recipient may hold pseudonymous data (e.g. under a data processing agreement)."});return t.suppress&&l.push({id:"suppression",label:`Removed at most ${Math.round(s.maxSuppression*100)}% of people`,ok:r<=s.maxSuppression,detail:`${e.suppressed} removed (${(r*100).toFixed(1)}%) so everyone is in a group of ${s.k} or more.`}),l}var J=e=>e.every(t=>t.ok||t.severity==="warn"),V=new Map,E=e=>S(e)?.label??V.get(e)??e;function le(e,t,s){let n=G(e,t),r=o=>{let{groupMap:u,...g}=o;return g},l=e.qiFields.map(o=>{let u=K(j(s,t.fields.filter(p=>p!==o),t.policy.k).recs,0,t.policy),g=Z(o),f=g?K(j(s,t.fields.map(p=>p===o?g:p),t.policy.k).recs,0,t.policy):null;return{id:o.id,label:E(o.id),level:C(o),distinct:new Set(e.recs.map(p=>p.qi[e.qiFields.indexOf(o)])).size,without:{k:u.k,unique:u.unique,atRisk:u.atRisk},coarser:f&&g&&{level:C(g),k:f.k,unique:f.unique,atRisk:f.atRisk}}}),i=[...e.before.groupMap.values()].sort((o,u)=>o.length-u.length).slice(0,12).map(o=>({size:o.length,values:o[0].qi})),c={};for(let o of t.fields){let u=S(o.id)?.column;u&&(c[o.id]=s.filter(g=>g.profile[u]==null||g.profile[u]==="").length)}return{ok:J(n),missing:c,compliance:Ce(e,t,n),checks:n,qiFields:e.qiFields.map(o=>({id:o.id,label:E(o.id)})),sensFields:e.sensFields.map(o=>({id:o.id,label:E(o.id)})),before:r(e.before),after:r(e.after),suppressed:e.suppressed,impact:l,smallest:i}}function Q(e){let t={...B,...e.policy??{}};for(let i of Object.keys(t))t[i]=Number(t[i]);let s=i=>i==null||i===""||!Number.isFinite(Number(i))?null:Number(i),n=(e.fields??[]).filter(i=>q(i.id)).map(i=>({id:i.id,use:i.use==="sensitive"&&!oe[i.id]?"sensitive":"qi",level:Math.max(0,Math.min(Number(i.level)||0,q(i.id).length-1)),band:Math.max(1,Math.min(S(i.id)?.numeric?.bandMax??50,Math.round(Number(i.band)||5))),min:S(i.id)?.numeric?s(i.min):null,max:S(i.id)?.numeric?s(i.max):null,dropMissing:!!S(i.id)&&!!i.dropMissing})),r=e.upload&&T.has(String(e.upload))?String(e.upload):null;if(e.upload&&!r)throw new Error("That uploaded file is no longer in memory (the admin server was restarted). Upload it again.");let l=(e.filters??[]).filter(i=>i&&S(String(i.id))&&Array.isArray(i.values)&&i.values.length).map(i=>({id:String(i.id),values:i.values.map(String)}));return{upload:r,filters:l,fields:n,roles:(e.roles??[]).map(String),requireAnswers:!!e.requireAnswers,suppress:!!e.suppress,policy:t}}async function X(e,t,s){return s.upload?re(T.get(s.upload).people,s):(await Se(e),await Re(e,t,s))}async function Se(e){if(V.size)return;let t=(await e.query("select q->>'id' as id, q->>'questionText' as text from survey s, json_array_elements(s.questionnaire->'questions') q")).rows;V=new Map(t.map(s=>[`q:${s.id}`,s.text]))}async function ae(e,t,s){let n=Q(s),r=await X(e,t,n),l=le(U(r,n),n,r);if(l.ok)return l;let{options:i,notes:c}=de(r,n,l);return{...l,fixes:{options:i,notes:c}}}async function ue(e,t,s){let n=Q(s),r=await X(e,t,n),l=(h,m)=>{let v={...n,fields:h,suppress:m},w=U(r,v),y=G(w,v);return{ev:w,pass:J(y),fails:y.filter(a=>!a.ok&&a.severity!=="warn").length}},i=n.fields.map(h=>({...h})),c=n.suppress,o=[],u=new Map;for(let h=0;h<60&&!l(i,c).pass;h++){if(!c&&l(i,!0).pass){c=!0,o.push(`Remove the people in groups smaller than ${n.policy.k}`);break}let m=null;for(let v of i){if(v.use!=="qi")continue;let w=Z(v);if(!w)continue;let y=i.map(I=>I===v?w:{...I}),a=l(y,c),b=a.fails*1e6+a.ev.before.atRisk*10+a.ev.before.groups/Math.max(1,a.ev.before.n);(!m||b<m.score)&&(m={fs:y,score:b,id:v.id,msg:`${E(v.id)} \u2192 ${C(w)}`})}if(!m)break;i=m.fs,u.set(m.id,m.msg)}let g=h=>{let m=l(h,c);return(m.pass?0:1e9)+m.fails*1e6+m.ev.before.atRisk*10+m.ev.before.groups/Math.max(1,m.ev.before.n)};for(let h of[...u.keys()]){let m=n.fields.find(w=>w.id===h),v=i.map(w=>w.id===h?{...m}:w);g(v)<=g(i)&&(i=v,u.delete(h))}o.unshift(...u.values());let f={...n,fields:i,suppress:c},p=le(U(r,f),f,r);return{fields:i,suppress:c,steps:o,result:p,why:p.ok?[]:de(r,f,p)}}function de(e,t,s){let n=a=>a>0&&a<.01?`${(a*100).toFixed(1)}%`:`${Math.round(a*100)}%`,r=a=>a.length<2?a.join(""):`${a.slice(0,-1).join(", ")} and ${a[a.length-1]}`,l=[],i=[],c=t.fields.filter(a=>a.use==="qi"&&!Z(a)),o=c.filter(a=>q(a.id)[a.level].banded),u=[];o.length&&u.push(`${r(o.map(a=>E(a.id)))} ${o.length>1?"are":"is"} at ${C(o[0])} (the widest it goes)`);for(let a of c.filter(b=>!o.includes(b)))u.push(q(a.id).length===1?`${E(a.id)} has no less detailed version`:`${E(a.id)} is already at ${C(a)}`);let g=u.length?`It can't go further: ${r(u)}.`:null,f={...t,suppress:!0,policy:{...t.policy,maxSuppression:1}},p=U(e,f),h=p.before.n?p.suppressed/p.before.n:0,m=G(p,f).filter(a=>!a.ok&&a.severity!=="warn");if(p.suppressed&&!m.length){let a=Math.ceil(h*100)/100,b=h>t.policy.maxSuppression;l.push({title:`Leave out the ${p.suppressed} people in groups smaller than ${t.policy.k}`,cost:`That's ${n(h)} of the file${b?`, more than your ${n(t.policy.maxSuppression)} limit, so the limit is raised to ${n(a)}`:""}. The researcher gets ${(p.before.n-p.suppressed).toLocaleString("en")} people instead of ${p.before.n.toLocaleString("en")}, and the rarest profiles are missing from the data.`,action:{type:"suppress",maxSuppression:b?a:void 0,label:b?`Leave them out (allow ${n(a)})`:"Leave them out"}})}else p.suppressed&&i.push(`Leaving out the ${p.suppressed} people in groups smaller than ${t.policy.k} (${n(h)}) wouldn't be enough on its own: \u201C${m[0].label}\u201D would still fail.`);let v=(m.length?m:G(U(e,t),t).filter(a=>!a.ok&&a.severity!=="warn")).find(a=>a.id.startsWith("l:"));if(v){let a=v.id.slice(2);l.push({title:`Remove the private column \u201C${E(a)}\u201D`,cost:"In some groups everyone gave the same answer, so sharing it would reveal their answer. Usually a rare answer (few people said \u201Cyes\u201D). The researcher doesn't get this column. Suggest then runs again.",action:{type:"drop",id:a,label:`Remove \u201C${E(a).slice(0,40)}\u201D and try again`}})}let w=s.before.unique,y=[...s.impact].sort((a,b)=>a.without.unique-b.without.unique)[0];return y&&w&&y.without.unique<w&&l.push({title:`Remove the ${y.label} column`,cost:`It causes the most risk: without it, ${y.without.unique===0?"nobody is":`${y.without.unique} ${y.without.unique===1?"person is":"people are"}`} one of a kind instead of ${w}. The researcher gets no ${y.label.toLowerCase()} at all. Suggest then runs again.`,action:{type:"drop",id:y.id,label:`Remove ${y.label} and try again`}}),{limits:g,options:l,notes:i}}async function ce(e,t,s){let n=Q(s),r=await X(e,t,n),l=U(r,n),i=l.recs;n.suppress&&(i=i.filter(u=>(l.before.groupMap.get(u.key)?.length??0)>=n.policy.k)),i=i.map(u=>({r:u,o:crypto.getRandomValues(new Uint32Array(1))[0]})).sort((u,g)=>u.o-g.o).map(u=>u.r);let c=["study_id",...l.qiFields.map(u=>E(u.id)),...l.sensFields.map(u=>E(u.id))],o=i.map((u,g)=>[`S${String(g+1).padStart(5,"0")}`,...u.qi,...u.sens.map(f=>f??"")]);return{ok:J(G(l,n)),header:c,rows:o}}async function pe(e,t,s){let{ok:n,header:r,rows:l}=await ce(e,t,s);if(!n)throw new Error("This request doesn't pass every check, so no extract is produced.");let i=c=>/[",\n]/.test(String(c??""))?`"${String(c).replace(/"/g,'""')}"`:String(c??"");return[r,...l].map(c=>c.map(i).join(",")).join(`
+`)+`
+`}async function ge(e,t,s,n=200){let{ok:r,header:l,rows:i}=await ce(e,t,s);return{ok:r,header:l,rows:i.slice(0,n),total:i.length}}var Me=["number","date","postcode","text","id"],T=new Map;function Fe(e){e=e.replace(/^﻿/,"");let t=e.slice(0,e.search(/\r?\n/)>>>0||e.length),s=o=>t.split(o).length-1,n=[",",";","	"].sort((o,u)=>s(u)-s(o))[0],r=[],l=[],i="",c=!1;for(let o=0;o<e.length;o++){let u=e[o];c?u==='"'&&e[o+1]==='"'?(i+='"',o++):u==='"'?c=!1:i+=u:u==='"'?c=!0:u===n?(l.push(i),i=""):u===`
+`||u==="\r"?(u==="\r"&&e[o+1]===`
+`&&o++,l.push(i),i="",l.some(g=>g.trim()!=="")&&r.push(l),l=[]):i+=u}return l.push(i),l.some(o=>o.trim()!=="")&&r.push(l),r}var Ae=new Set(["","na","n/a","null","none","-","nan","unknown","?"]),z=e=>Ae.has(e.trim().toLowerCase()),H=e=>{let t=e.trim().replace(/\s/g,""),s=Number(/^-?\d+,\d+$/.test(t)?t.replace(",","."):t);return Number.isFinite(s)?s:null},me=e=>{let t=e.trim(),s=/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})([ T].*)?$/.exec(t);return s?Number(s[1]):(s=/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})([ T].*)?$/.exec(t),s?Number(s[3]):null)},fe=/(^|[^a-z])(e-?mail|mail|first.?name|last.?name|surname|full.?name|^name$|phone|tel|mobile|address|street|ssn|social.?sec|passport|iban|account|ip.?addr|mrn|medical.?record|record.?n|insurance.?n|national.?id|patient.?id|user.?id|^id$)([^a-z]|$)/i,Ee=/(\bage\b|birth|dob|sex|gender|country|nation|city|town|region|state|zip|post.?code|postal|plz|ethnic|race|occupation|job|profession|marital|height|weight|year|date|admission|discharge)/i,Ie=/(zip|post.?code|postal|plz)/i,xe=/(^|[^a-z])(id|mrn|medical.?record|record.?n|patient.?id|user.?id|case.?n|subject.?id)([^a-z]|$)/i;function Ne(e,t){if(Ie.test(e))return"postcode";let s=r=>t.length?t.filter(l=>r(l)!=null).length/t.length:0;if(t.length&&s(me)>=.9)return"date";let n=new Set(t).size;return xe.test(e)||t.length>20&&n===t.length&&s(H)<.9?"id":t.length&&s(H)>=.9&&n>2?"number":"text"}function Le(e,t,s=2){return s<=1?{role:"leave",why:"Same value on every row, so it tells the researcher nothing."}:t==="id"?{role:"leave",why:"An ID or code that points to one person, so it's left out by default."}:fe.test(e)?{role:"leave",why:"The name looks like a direct identifier, so it's left out by default."}:t==="postcode"?{role:"qi",why:"A postcode: others could know where someone lives."}:Ee.test(e)?{role:"qi",why:"The name looks like something others could know."}:{role:"sensitive",why:"Looks like research data."}}function qe(e){let t=new Map;for(let s of e){let n=z(s)?ie:s;t.set(n,(t.get(n)??0)+1)}return t.size>60?null:[...t].sort((s,n)=>n[1]-s[1]).map(([s,n])=>({v:s,n}))}function he(e,t,s,n,r,l){let i=`u:${e.id}:${t}`,c=e.raw[t],o=c.filter(a=>!z(a)),u=n==="date"?`${s} (year)`:s,g=n==="date"?me:n==="number"?H:null,f=0,p=c.map(a=>{if(z(a))return null;if(!g)return a;let b=g(a);return b==null&&f++,b});if(g&&!p.some(a=>typeof a=="number"))throw new Error(`None of the values in \u201C${s}\u201D can be read as ${n==="date"?"dates":"numbers"}.`);p.forEach((a,b)=>e.people[b].profile[i]=a??"");let h=Le(s,n,new Set(o).size),m,v,w=null;if(n==="number"||n==="date"){let a=p.filter(R=>typeof R=="number");if(!a.length)throw new Error(`None of the values in \u201C${s}\u201D can be read as ${n==="date"?"dates":"numbers"}.`);let b=Math.floor(Math.min(...a)),I=Math.ceil(Math.max(...a)),$=Math.max(1,I-b),M=$>2e3?10**Math.floor(Math.log10($/200)):1,N=a.some(R=>!Number.isInteger(R)),x=Math.max(30,Math.ceil($/2));v={unit:"",rangeLabel:u,lo:b,hi:I,value:Number,scale:M,decimals:N,bandMax:x,bandLabel:R=>R<=1?n==="date"?"Exact year":"Exact value":n==="date"?`${R}-year ranges`:`${R.toLocaleString("en")}-wide ranges`};let D=(R,d,k)=>{if(d<=1)return String(N?R:Math.round(R));let F=k+Math.floor((R-k)/d)*d;return N?`${F}\u2013<${F+d}`:`${F}\u2013${F+d-1}`};m=[{label:n==="date"?"Year in ranges":"Value in ranges",banded:!0,fn:(R,d)=>R==null||R===""?L:D(Number(R),d.band??1,d.min??b)}],w={unit:"",rangeLabel:u,lo:b,hi:I,bandMax:x,scale:M}}else{let a=new Map;for(let b of o)a.set(b,(a.get(b)??0)+1);m=[{label:"Exact value",fn:A(String)}],n==="postcode"&&(m.push({label:"First 3 characters",fn:A(b=>`${String(b).slice(0,3)}\u2026`)}),m.push({label:"First 2 characters",fn:A(b=>`${String(b).slice(0,2)}\u2026`)})),n!=="id"&&a.size>1&&m.push(O)}let y=l??h.role;return _.set(i,{label:u,column:i,defaultUse:y==="sensitive"?"sensitive":"qi",levels:m,numeric:v}),{id:i,label:u,name:s,kind:n,detected:r,role:y,why:n===r?h.why:"Type set by you.",distinct:new Set(o).size,missing:c.length-o.length,unreadable:f,examples:[...new Set(o)].slice(0,3),levels:m.map(a=>a.label),bandLevel:m.findIndex(a=>a.banded),numeric:w,values:n==="text"||n==="postcode"?qe(c):null}}function be(e,t){let s=Fe(t);if(s.length<2)throw new Error("The file needs a header row and at least one data row.");let n=s[0].map((f,p)=>f.trim()||`Column ${p+1}`),r=s.slice(1);if(r.length>2e5)throw new Error("That file has more than 200,000 rows; please split it.");let l=crypto.randomUUID().slice(0,8),i=r.map((f,p)=>({userId:`row${p+1}`,profile:{},answers:new Map})),c=n.map((f,p)=>r.map(h=>(h[p]??"").trim())),o={id:l,people:i,raw:c},u=n.map((f,p)=>{let h=Ne(f,c[p].filter(m=>!z(m)));return he(o,p,f,h,h)});for(;T.size>=5;)ee(T.keys().next().value);let g={id:l,name:e,rows:r.length,columns:u,people:i,raw:c};return T.set(l,g),Te(g)}var Te=e=>({id:e.id,name:e.name,rows:e.rows,columns:e.columns});function ye(e,t,s,n){let r=T.get(e);if(!r)throw new Error("That uploaded file is no longer in memory (the admin server was restarted). Upload it again.");if(!Me.includes(s))throw new Error(`Unknown type \u201C${s}\u201D.`);let l=r.columns.findIndex(o=>o.id===t);if(l<0)throw new Error("No such column.");let i=r.columns[l],c=n&&["qi","sensitive","leave"].includes(n)?n:void 0;return r.columns[l]=he(r,Number(t.split(":")[2]),i.name,s,i.detected,c),r.columns[l]}function ee(e){let t=T.get(e);if(!t)return!1;for(let s of t.columns)_.delete(s.id);return T.delete(e)}function we(e,t){let s=t.upload?T.get(t.upload)?.columns??[]:[];return[...e.qiFields,...e.sensFields].map(n=>s.find(r=>r.id===n.id)).filter(n=>n?.kind==="id").map(n=>n.name)}function Ce(e,t,s){let n=d=>s.find(k=>k.id===d)?.ok??!0,r=d=>s.filter(k=>k.id.startsWith(d)),l=t.suppress?e.recs.filter(d=>(e.before.groupMap.get(d.key)?.length??0)>=t.policy.k):e.recs,i=new Date().getFullYear(),c=[...e.qiFields.map((d,k)=>({f:d,values:l.map(F=>F.qi[k])})),...e.sensFields.map((d,k)=>({f:d,values:l.map(F=>F.sens[k]??L)}))].map(({f:d,values:k})=>{let F=t.upload?T.get(t.upload)?.columns.find(P=>P.id===d.id):void 0;return{f:d,label:E(d.id),kind:F?.kind??(d.id==="age"||d.id==="yearDiagnosed"?"number":"text"),rawLabel:F?F.name:E(d.id),values:k.filter(P=>P!==L&&P!=="")}}),o=d=>{let k=/^(-?\d+(?:\.\d+)?)(?:–<?(-?\d+(?:\.\d+)?))?$/.exec(d);return k?[Number(k[1]),Number(k[2]??k[1])]:null},u=we(e,t),g=r("l:").filter(d=>!d.ok).length,f=r("t:").filter(d=>!d.ok).length,p=[{id:"single",label:"Singling out: nobody can be picked out",status:n("k")&&n("unique")&&!u.length?"ok":"fail",detail:u.length?`${u.map(d=>`\u201C${d}\u201D`).join(", ")} ${u.length===1?"is an ID that points":"are IDs that point"} to one person, so every row can be singled out. With it the file is pseudonymous data, still under GDPR.`:n("k")&&n("unique")?`Everyone shares their profile values with at least ${t.policy.k-1} others.`:"Some people have a combination of values few or no others have."},{id:"infer",label:"Inference: private answers can't be deduced from a group",status:g?"fail":f?"review":"ok",detail:g?`${g} private column${g>1?"s":""} would reveal answers for some groups.`:f?`Answers vary in every group, but ${f} column${f>1?"s differ":" differs"} noticeably from the overall mix in some groups.`:"Every group contains different answers."},{id:"link",label:"Linkability: rows can't be joined back to people",status:"review",detail:"Rows get random study IDs that aren't stored anywhere, and are shuffled. Whether the recipient holds other data they could join on (e.g. their own patient list) can't be checked here."},{id:"risk",label:"Overall re-identification risk is low",status:n("avgRisk")?"ok":"fail",detail:s.find(d=>d.id==="avgRisk")?.detail??""},{id:"minimal",label:"Data minimisation: only what the research needs",status:"review",detail:`${c.length} column${c.length===1?"":"s"} will be shared. Confirm each one is needed for the stated research purpose (Art. 5(1)(c)).`}],h=d=>c.filter(k=>d.test(k.rawLabel)),m=/^(\d{4}[-/.]\d{1,2}[-/.]\d{1,2}|\d{1,2}[-/.]\d{1,2}[-/.]\d{4})/,v=d=>d==="text"||d==="postcode"||d==="id",w=c.filter(d=>v(d.kind)&&d.values.some(k=>m.test(String(k)))),y=0;for(let d of c){let k=d.f.id==="age"||/(^|[^a-z])age([^a-z]|$)/i.test(d.rawLabel),F=!k&&/birth|dob|born/i.test(d.rawLabel);if(!(!k&&!F))for(let P of d.values){let Y=o(String(P));Y&&(k&&Y[0]>=90&&y++,F&&Y[1]<=i-90&&y++)}}let a=c.filter(d=>d.kind==="postcode"||/(zip|post.?code|postal|plz)/i.test(d.rawLabel)),b=a.filter(d=>!/^First /.test(C(d.f))),I=a.filter(d=>d.f.level>0&&/First 3/.test(C(d.f))),$=h(/(city|town|street|address|county|district|municipal|village|geo|latitude|longitude|gps)/i),M=c.filter(d=>fe.test(d.rawLabel)),N=c.filter(d=>d.kind==="id"||v(d.kind)&&d.values.length>20&&new Set(d.values).size===d.values.length),x=d=>d.map(k=>`\u201C${k.label}\u201D`).join(", "),D=[{id:"direct",label:"No names, contact details or ID numbers",status:M.length?"fail":"ok",detail:M.length?`${x(M)} look${M.length===1?"s":""} like a name, contact detail or ID number (identifiers A, D\u2013K, N, O).`:"No exported column looks like a name, address, phone, email, SSN, record, account, licence, device, URL or IP number."},{id:"geo",label:"No location smaller than a state",status:b.length||$.length?"fail":I.length?"review":"ok",detail:b.length||$.length?`${x([...b,...$])} ${b.length+$.length===1?"is":"are"} more precise than a state (identifier B).`:I.length?`${x(I)}: the first 3 digits are allowed only where that area has more than 20,000 people; otherwise use \u201C000\u201D. Check against census data.`:"Only country or continent level, or shortened postcodes."},{id:"dates",label:"Dates shown as year only",status:w.length?"fail":"ok",detail:w.length?`${x(w)} contain${w.length===1?"s":""} full dates (identifier C).`:"Every date is released as a year or a range of years."},{id:"age90",label:"Ages over 89 grouped as 90+",status:y?"fail":"ok",detail:y?`${y} row${y===1?" shows":"s show"} an age (or birth year) that is entirely 90 or older. Safe Harbor needs them in one \u201C90 or older\u201D group: limit \u201CWho's included\u201D to under 90, or use ranges wide enough that none starts at 90 or above.`:"No released age or birth year is entirely 90 or older."},{id:"codes",label:"No other unique codes",status:N.length?"fail":"ok",detail:N.length?`${x(N)}: every row has a different value, like a code or ID (identifier R).`:"No exported column has a different value on every row. Study IDs are random and not derived from any identifier."},{id:"unseen",label:"Photos, biometrics and free text",status:"review",detail:"Full-face photos, fingerprints/voiceprints (P, Q), and names hidden inside free-text answers can't be detected automatically. Confirm none are in the file."},{id:"knowledge",label:"No actual knowledge the data could identify someone",status:"review",detail:"Safe Harbor also requires that the sender doesn't know of a way the remaining data could identify a person. That's your confirmation."}],R=d=>d.some(k=>k.status==="fail")?"fail":"pass";return{gdpr:{status:R(p),rules:p},hipaa:{status:R(D),rules:D}}}globalThis.crypto.randomUUID||(globalThis.crypto.randomUUID=()=>"10000000-1000-4000-8000-100000000000".replace(/[018]/g,e=>(Number(e)^crypto.getRandomValues(new Uint8Array(1))[0]&15>>Number(e)/4).toString(16)));globalThis.Engine={check:ae,suggest:ue,preview:ge,extract:pe,readUpload:be,setColumnKind:ye,forgetUpload:ee,DEFAULT_POLICY:B};})();
+
+</script>
+<script>
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const fmt = (n) => Number(n).toLocaleString("en-GB");
+const DB = "upload"; // there's only one data source here: the CSV the user opens
+
+// The admin page talked to a server; here the same calls go straight to the engine in this page.
+async function api(path, opts = {}) {
+  const body = opts.body ? JSON.parse(opts.body) : {};
+  try {
+    if (path === "/api/anon/check") return await Engine.check(null, "", body);
+    if (path === "/api/anon/suggest") return await Engine.suggest(null, "", body);
+    if (path === "/api/anon/preview") return await Engine.preview(null, "", body);
+    const m = /^\/api\/anon\/upload\/([^/]+)\/column$/.exec(path);
+    if (m) return Engine.setColumnKind(m[1], String(body.col), String(body.kind), body.role);
+  } catch (e) {
+    throw new Error(e?.message ?? String(e));
+  }
+  throw new Error(`Unknown action ${path}`);
+}
+
+const tip = $("#tooltip");
+function showTip(e, html) {
+  tip.innerHTML = html; tip.style.opacity = 1;
+  const x = Math.min(e.clientX + 12, innerWidth - tip.offsetWidth - 8);
+  tip.style.left = `${x}px`; tip.style.top = `${e.clientY - tip.offsetHeight - 10}px`;
+}
+// No top bar in the standalone page, so the height is 0.
+const setHdr = () => document.documentElement.style.setProperty("--hdr", `${document.querySelector("header.top")?.offsetHeight ?? 0}px`);
+setHdr(); addEventListener("resize", setHdr);
+const hideTip = () => { tip.style.opacity = 0; tip.classList.remove("wrap"); };
+function showInfo(el, x, y) {
+  // Inside a pop-up the tooltip must live in the pop-up too, or the pop-up covers it.
+  const host = el.closest("dialog") ?? document.body;
+  if (tip.parentElement !== host) host.append(tip);
+  tip.classList.add("wrap"); tip.innerHTML = el.dataset.tip; tip.style.opacity = 1;
+  tip.style.left = `${Math.max(8, Math.min(x + 12, innerWidth - tip.offsetWidth - 8))}px`;
+  const top = y - tip.offsetHeight - 10;
+  tip.style.top = `${top < 8 ? y + 22 : top}px`;
+}
+document.addEventListener("mouseover", (e) => { const el = e.target.closest?.(".info[data-tip]"); if (el) showInfo(el, e.clientX, e.clientY); });
+document.addEventListener("mouseout", (e) => { if (e.target.closest?.(".info[data-tip]")) hideTip(); });
+// Only for keyboard focus: a pop-up focusing its first element on open mustn't pop a tooltip.
+document.addEventListener("focusin", (e) => { const el = e.target.closest?.(".info[data-tip]"); if (el && el.matches(":focus-visible")) { const b = el.getBoundingClientRect(); showInfo(el, b.left, b.top); } });
+document.addEventListener("focusout", (e) => { if (e.target.closest?.(".info[data-tip]")) hideTip(); });
+
+/* ---------- anonymization ---------- */
+const ROLE_LABEL = { "pd-patient": "Person with Parkinson's", "relative-caregiver": "Relative or caregiver", doctor: "Doctor", other: "Other" };
+const POLICY_INPUTS = [
+  ["k", "k: smallest group", 1, 1, "k-anonymity. Every combination of the 'others could know it' columns (e.g. 70–74, female, Germany) must be shared by at least k people. With k = 5, someone who knows a person's age and country can only narrow them down to 5 or more people. Higher is safer but needs less detail. 5 is common; 10+ for small or sensitive groups."],
+  ["l", "l: different answers", 1, 1, "l-diversity. Inside each group, a private answer must have at least l different values. Without it, a group of 5 who all answered 'smokes' still reveals that anyone in the group smokes. 2 is the minimum; 3 is stricter."],
+  ["t", "t: max gap (0–1)", 0.05, 0.01, "t-closeness. How far a group's answers may differ from the answers of everyone in the extract: 0 = the same mix, 1 = completely different. A big gap leaks something (e.g. a group where 90% are unemployed vs 20% overall). Shown as a warning only, it doesn't block the release."],
+  ["maxAvgRisk", "Max average risk", 0.01, 0.01, "The average chance that a person in the extract could be re-identified by someone who knows their 'others could know it' values (number of groups ÷ number of people). 0.1 means 10%. Lower is safer."],
+  ["minCohort", "Min people", 1, 1, "The smallest number of people an extract may contain. Very small extracts are easy to re-identify and too small for sound statistics."],
+  ["maxSuppression", "Max share removed", 0.01, 0.01, "When 'Remove people in groups smaller than k' is on: the most people that may be left out, as a share of the cohort. 0.05 = 5%. Above this the extract would no longer represent the cohort, so make columns less detailed instead."],
+];
+const an = { meta: null, req: null, seq: 0, timer: null, last: null, undo: null };
+const pctFmt = (x) => `${(x * 100).toFixed(x < 0.1 && x > 0 ? 1 : 0)}%`;
+// A profile field or an uploaded column, by id.
+const pdef = (id) => an.meta.profile.find((f) => f.id === id) ?? an.upload?.columns.find((c) => c.id === id);
+const isUpload = (id) => id.startsWith("u:");
+const fieldInfo = (id) => {
+  if (isUpload(id)) { const c = pdef(id); return c ? { label: c.label, where: `Column of ${an.upload.name}`, levels: c.levels } : { label: id, where: "", levels: ["Exact value"] }; }
+  if (!id.startsWith("q:")) { const p = an.meta.profile.find((f) => f.id === id); return { label: p.label, where: "Profile", levels: p.levels }; }
+  for (const s of an.meta.surveys) { const q = s.questions.find((x) => x.id === id); if (q) return { label: q.text, where: `${s.group} · ${s.name}`, levels: an.meta.questionLevels }; }
+  return { label: id, where: "", levels: an.meta.questionLevels };
+};
+
+function initAnon() {
+  // No registry here: just the policy defaults and the CSV the user opens.
+  an.meta = { profile: [], surveys: [], directIdentifiers: [], questionLevels: ["Exact answer"], filterValues: {}, defaultPolicy: { ...Engine.DEFAULT_POLICY } };
+  an.req = uploadRequest();
+  renderBuilder();
+  scheduleCheck(0);
+}
+
+// Where the data comes from: the KiPa registry, or a CSV the admin uploads. Each keeps its own request.
+an.source = "upload"; an.saved = {};
+function setSource(src) {
+  if (src === an.source) return;
+  an.saved[an.source] = an.req;
+  an.source = src;
+  an.req = an.saved[src] ?? (src === "upload" ? uploadRequest() : null);
+  if (!an.req) { an.req = an.saved.registry; }
+  renderBuilder(); scheduleCheck(0);
+}
+// A starting request for an uploaded file: every column the tool thinks is safe to consider.
+function uploadRequest() {
+  const fields = (an.upload?.columns ?? []).filter((c) => c.role === "qi" || c.role === "sensitive")
+    .map((c) => ({ id: c.id, use: c.role, level: c.bandLevel >= 0 ? c.bandLevel : 0, band: 1, min: null, max: null }));
+  return { upload: an.upload?.id ?? null, filters: [], roles: [], requireAnswers: false, suppress: false, policy: { ...an.meta.defaultPolicy }, fields };
+}
+// Registry (real or synthetic) or an uploaded file. The registry choice is the same as the header's Data switch.
+document.querySelectorAll("[data-src]").forEach((b) => b.onclick = () => {
+  const v = b.dataset.src;
+  if (v === "upload") return setSource("upload");
+  if (an.source === "upload") setSource("registry");
+  if (v !== DB) document.querySelector(`.seg button[data-db="${v}"]`).click();
+  else renderBuilder();
+});
+
+async function uploadFile(file) {
+  const info = $("#an-file-info");
+  info.innerHTML = `<div class="fileinfo muted">Reading ${esc(file.name)}…</div>`;
+  try {
+    const buf = await file.arrayBuffer();
+    let text; try { text = new TextDecoder("utf-8", { fatal: true }).decode(buf); } catch { text = new TextDecoder("windows-1252").decode(buf); } // Excel exports
+    const data = Engine.readUpload(file.name, text); // parsed here, in memory; nothing is uploaded anywhere
+    if (an.upload) Engine.forgetUpload(an.upload.id);
+    an.upload = data;
+    an.req = uploadRequest();
+    renderBuilder(); scheduleCheck(0);
+  } catch (e) {
+    info.innerHTML = `<p class="error" style="margin:8px 0 0">${esc(e.message)}</p>`;
+  }
+}
+// Mock data: a made-up clinic export (fixed seed, so it's the same every time) with the kinds of
+// columns a real one has, including direct identifiers the admin must mark as "Never share".
+function mockCsv() {
+  let seed = 7; const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32);
+  const pick = (xs, w) => { if (!w) return xs[Math.floor(rnd() * xs.length)]; let x = rnd() * w.reduce((a, b) => a + b, 0); for (let i = 0; i < xs.length; i++) if ((x -= w[i]) < 0) return xs[i]; return xs[0]; };
+  const norm = (m, sd) => m + sd * Math.sqrt(-2 * Math.log(rnd() || 1e-9)) * Math.cos(2 * Math.PI * rnd());
+  const first = { F: ["Anna", "Maria", "Sofia", "Laura", "Eva", "Julia", "Clara", "Helena", "Ingrid", "Marta"], M: ["Peter", "Jonas", "Lukas", "Thomas", "Michael", "Stefan", "Paul", "Andreas", "Georg", "Felix"] };
+  const last = ["Müller", "Schmidt", "Schneider", "Fischer", "Weber", "Meyer", "Wagner", "Becker", "Hoffmann", "Koch", "Richter", "Klein", "Wolf", "Neumann", "Braun"];
+  const cities = [["Berlin", "10"], ["Hamburg", "20"], ["Munich", "80"], ["Cologne", "50"], ["Frankfurt", "60"], ["Leipzig", "04"], ["Freiburg", "79"], ["Kiel", "24"]];
+  const pad = (n) => String(n).padStart(2, "0");
+  const rows = [["patient_id", "First name", "Last name", "Email", "Date of birth", "Sex", "Postcode", "City", "Country", "Diagnosis date", "Subtype", "Hoehn & Yahr stage", "UPDRS III score", "BMI", "Smoker", "Levodopa", "Deep brain stimulation"]];
+  for (let i = 0; i < 500; i++) {
+    const sex = pick(["F", "M"], [42, 58]), age = Math.round(Math.min(97, Math.max(38, norm(69, 9))));
+    const fn = pick(first[sex]), ln = pick(last), [city, zip] = pick(cities, [20, 12, 14, 10, 9, 8, 5, 4]);
+    const dob = new Date(2026 - age, Math.floor(rnd() * 12), 1 + Math.floor(rnd() * 28));
+    const yrsSince = Math.max(0, Math.min(age - 35, Math.round(Math.abs(norm(6, 4)))));
+    const dx = new Date(2026 - yrsSince, Math.floor(rnd() * 12), 1 + Math.floor(rnd() * 28));
+    const stage = Math.min(5, Math.max(1, Math.round(1 + yrsSince / 4 + norm(0, .6))));
+    rows.push([`KP-${String(10000 + i * 7)}`, fn, ln, `${fn}.${ln}${i}@example-mail.de`.toLowerCase(),
+      `${pad(dob.getDate())}.${pad(dob.getMonth() + 1)}.${dob.getFullYear()}`, sex, `${zip}${String(Math.floor(rnd() * 1000)).padStart(3, "0")}`, city,
+      pick(["DE", "DE", "DE", "AT", "CH"]), `${dx.getFullYear()}-${pad(dx.getMonth() + 1)}-${pad(dx.getDate())}`,
+      pick(["Tremor-dominant", "Akinetic-rigid", "Mixed"], [45, 30, 25]), rnd() < .04 ? "" : stage,
+      rnd() < .08 ? "" : Math.round(Math.max(4, norm(12 + stage * 7, 6))), (Math.max(17, norm(26, 4))).toFixed(1).replace(".", ","),
+      pick(["never", "former", "current"], [55, 35, 10]), rnd() < .1 ? "" : pick(["yes", "no"], [70, 30]), pick(["no", "yes"], [92, 8])]);
+  }
+  return rows.map((r) => r.map((v) => /[;"\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : v).join(";")).join("\n");
+}
+$("#an-mock").onclick = () => uploadFile(new File([mockCsv()], "mock-clinic-patients.csv", { type: "text/csv" }));
+$("#an-file").onchange = (e) => { const f = e.target.files[0]; if (f) uploadFile(f); e.target.value = ""; };
+const drop = $("#an-drop");
+drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
+drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+drop.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("over"); const f = e.dataTransfer.files[0]; if (f) uploadFile(f); });
+
+const KIND_OPTS = [["number", "Number"], ["date", "Date"], ["postcode", "Postcode"], ["text", "Text / category"], ["id", "ID / identifier"]];
+const KIND_HINT = { number: "number: shared in ranges", date: "date: shared as year", postcode: "postcode: can be shortened", text: "text", id: "identifier: points to one person" };
+const ROLE_OPTS = [["qi", "Others could know it"], ["sensitive", "Private (research data)"], ["leave", "Leave out"]];
+// What each "How it's used" choice does to the file and the checks.
+const ROLE_TIP = "<b>Others could know it</b>: shared. A neighbour, employer or social media could know this, so it's used to form the groups: everyone must share their combination with enough others (k), and Suggest makes it less detailed if needed.<br><br><b>Private (research data)</b>: shared. Only the person told us this, so it isn't used to form groups. Instead, inside each group the answers must vary, so nobody's answer can be deduced.<br><br><b>Leave out</b>: not in the file and not checked. Use it for identifiers and anything the research doesn't need.<br><br>Marking something private that others could know makes the file look safer than it is.";
+function renderUploadCols() {
+  const u = an.upload, r = an.req;
+  $("#an-file-info").innerHTML = u ? `<div class="fileinfo"><span>📄 <b>${esc(u.name)}</b> · ${fmt(u.rows)} rows · ${u.columns.length} columns</span>
+      <button class="linkbtn" id="an-forget">Forget this file</button></div>` : "";
+  $("#an-drop").querySelector("b").textContent = u ? "Choose another file" : "Choose a CSV file";
+  $("#an-forget")?.addEventListener("click", async () => {
+    Engine.forgetUpload(u.id);
+    an.upload = null; an.req = uploadRequest(); renderBuilder(); scheduleCheck(0);
+  });
+  $("#an-cols-upload").innerHTML = u ? `<p class="sub">For each column: its <b>type</b> (left) and <b>how it's used</b> (right) <i class="info" tabindex="0" data-tip="${esc(ROLE_TIP)}">i</i>. The tool guessed both from the column names and values; check every row.</p>
+    <div class="ucols"><div class="hdr"><span>Column</span><span>Type</span><span>How it's used</span></div>${u.columns.map((c, i) => `<div class="ucol ${c.role}">
+      <div><span class="n">${esc(c.label)}</span><small>${KIND_HINT[c.kind]}${c.missing ? ` · ${fmt(c.missing)} empty` : ""}${c.unreadable ? ` · ${fmt(c.unreadable)} couldn't be read as ${c.kind === "date" ? "dates" : "numbers"} and count as empty` : ""} · e.g. ${c.examples.map((x) => esc(x.length > 22 ? x.slice(0, 21) + "…" : x)).join(", ") || "–"}</small><small id="uwhy-${i}">${esc(c.why)}${c.kind !== c.detected ? ` (detected as ${KIND_OPTS.find((k) => k[0] === c.detected)[1].toLowerCase()})` : ""}</small></div>
+      <select class="kind ${c.kind !== c.detected ? "changed" : ""}" title="Type: what the values are" data-ukind="${i}" aria-label="Type of ${esc(c.label)}">${KIND_OPTS.map(([v, l]) => `<option value="${v}" ${c.kind === v ? "selected" : ""}>${l}</option>`).join("")}</select>
+      <select data-ucol="${i}" title="How it's used" aria-label="How ${esc(c.label)} is used">${ROLE_OPTS.map(([v, l]) => `<option value="${v}" ${c.role === v ? "selected" : ""}>${l}</option>`).join("")}</select>
+    </div>`).join("")}</div>` : `<p class="muted" style="margin:0">Upload a CSV in step 1 to see its columns.</p>`;
+  // Correcting a column's type: the server rebuilds it (values, detail options), then the request follows.
+  $("#an-cols-upload").querySelectorAll("[data-ukind]").forEach((sel) => sel.onchange = async () => {
+    const i = +sel.dataset.ukind, c = u.columns[i];
+    sel.disabled = true;
+    try {
+      const nc = await api(`/api/anon/upload/${u.id}/column`, { method: "POST", body: JSON.stringify({ col: c.id, kind: sel.value, role: c.role }) });
+      u.columns[i] = nc;
+      r.fields = r.fields.filter((f) => f.id !== nc.id);
+      if (nc.role === "qi" || nc.role === "sensitive") r.fields.push({ id: nc.id, use: nc.role, level: nc.bandLevel >= 0 ? nc.bandLevel : 0, band: 1, min: null, max: null });
+      renderBuilder(); scheduleCheck();
+    } catch (e) {
+      sel.value = c.kind; sel.disabled = false;
+      $(`#uwhy-${i}`).innerHTML = `<span class="err">${esc(e.message)}</span>`;
+    }
+  });
+  $("#an-cols-upload").querySelectorAll("[data-ucol]").forEach((sel) => sel.onchange = () => {
+    const c = u.columns[+sel.dataset.ucol]; c.role = sel.value;
+    r.fields = r.fields.filter((f) => f.id !== c.id);
+    if (c.role === "qi" || c.role === "sensitive") r.fields.push({ id: c.id, use: c.role, level: c.bandLevel >= 0 ? c.bandLevel : 0, band: 1, min: null, max: null });
+    renderBuilder(); scheduleCheck();
+  });
+}
+
+// Step 1 row filters: "Only include rows where Country is DE or AT". Any column, shared or not.
+function filterColumns() {
+  if (an.source === "upload") return (an.upload?.columns ?? []).filter((c) => c.values).map((c) => ({ id: c.id, label: c.label, values: c.values }));
+  return Object.entries(an.meta.filterValues ?? {}).map(([id, values]) => ({ id, label: pdef(id)?.label ?? id, values }));
+}
+function renderFilters() {
+  const r = an.req, box = $("#an-filters");
+  r.filters ??= [];
+  const cols = filterColumns();
+  if (!cols.length) { box.innerHTML = ""; return; }
+  box.innerHTML = `<div class="filters"><div class="fhead">Only include rows where… <small>optional</small></div>
+    ${r.filters.map((flt, i) => { const col = cols.find((c) => c.id === flt.id); if (!col) return "";
+      return `<div class="flt"><div class="fl-top"><select data-fcol="${i}" aria-label="Column to filter on">${cols.map((c) => `<option value="${c.id}" ${c.id === flt.id ? "selected" : ""}>${esc(c.label)}</option>`).join("")}</select>
+        <span class="muted">is one of</span><button class="x" data-frm="${i}" aria-label="Remove this condition">×</button></div>
+        <div class="chips">${col.values.map((v) => `<label class="chip"><input type="checkbox" data-fv="${i}" value="${esc(v.v)}" ${flt.values.includes(v.v) ? "checked" : ""}> ${esc(v.v)} <small>${fmt(v.n)}</small></label>`).join("")}</div>
+        ${flt.values.length ? "" : `<small class="muted">Tick the values to keep. Until then this condition does nothing.</small>`}</div>`; }).join("")}
+    <button class="linkbtn" id="an-fadd" type="button">+ Add a condition</button></div>`;
+  $("#an-fadd").onclick = () => { const free = cols.find((c) => !r.filters.some((f) => f.id === c.id)) ?? cols[0]; r.filters.push({ id: free.id, values: [] }); renderFilters(); };
+  box.querySelectorAll("[data-frm]").forEach((b) => b.onclick = () => { r.filters.splice(+b.dataset.frm, 1); renderFilters(); scheduleCheck(); });
+  box.querySelectorAll("[data-fcol]").forEach((sel) => sel.onchange = () => { r.filters[+sel.dataset.fcol] = { id: sel.value, values: [] }; renderFilters(); scheduleCheck(); });
+  box.querySelectorAll("[data-fv]").forEach((c) => c.onchange = () => {
+    const flt = r.filters[+c.dataset.fv];
+    flt.values = c.checked ? [...flt.values, c.value] : flt.values.filter((v) => v !== c.value);
+    renderFilters(); scheduleCheck();
+  });
+}
+
+// ---------- stepper: 1 Data → 2 Columns → 3 Detail → 4 Review and export ----------
+an.step = 1;
+try { an.step = Math.min(4, Math.max(1, Number(localStorage.getItem("kipa-anon-step")) || 1)); } catch { /* private window */ }
+const STEP_NAMES = ["Choose your data", "Select columns to share", "Configure column details", "Review and export"];
+function goStep(n) {
+  an.step = n;
+  try { localStorage.setItem("kipa-anon-step", String(n)); } catch { /* ignore */ }
+  renderStepper();
+  const top = $("#an-crumbs").getBoundingClientRect().top + scrollY - (document.querySelector("header.top")?.offsetHeight ?? 0) - 8;
+  if (scrollY > top) scrollTo({ top, behavior: "smooth" });
+}
+// One line per step, used in the breadcrumb (short) and on the review step (full).
+function stepSummaries(full = false) {
+  const r = an.req, up = an.source === "upload", d = an.last;
+  const cap = (xs) => full || xs.length <= 2 ? xs.join(" · ") : `${xs.slice(0, 2).join(" · ")} +${xs.length - 2}`;
+  const n = d ? `${fmt(d.after.n)} ${r.upload ? "rows" : "people"}` : "";
+  const flt = (r.filters ?? []).filter((x) => x.values.length);
+  const fltText = flt.map((x) => `${pdef(x.id)?.label ?? x.id}: ${x.values.join(", ")}`);
+  const s1 = up
+    ? (an.upload ? cap([an.upload.name, n, ...fltText].filter(Boolean)) : "No file yet")
+    : cap([DB === "synth" ? "Synthetic" : "Real", n, r.roles.length === 4 || !r.roles.length ? "all roles" : r.roles.map((x) => ROLE_LABEL[x]).join(", "), ...fltText].filter(Boolean));
+  const known = r.fields.filter((f) => f.use === "qi").length, priv = r.fields.filter((f) => f.use === "sensitive").length;
+  const s2 = !r.fields.length ? "Nothing chosen yet"
+    : up ? `${known} others could know · ${priv} private · ${(an.upload?.columns ?? []).filter((c) => c.role === "leave").length} left out`
+    : (() => { const q = r.fields.filter((f) => f.id.startsWith("q:")).length; return `${r.fields.length - q} profile · ${q} survey answer${q === 1 ? "" : "s"}`; })();
+  const detail = [];
+  for (const f of r.fields) {
+    const info = fieldInfo(f.id), p = pdef(f.id), lvl = info.levels[f.level] ?? "";
+    const banded = p && p.bandLevel === f.level;
+    if (banded && (f.band ?? 1) > 1) detail.push(`${info.label}: ${shownText(f)}`);
+    else if (!banded && f.level > 0) detail.push(`${info.label}: ${lvl.replace(/ as “other”/, " grouped")}`);
+    if (f.min != null || f.max != null) detail.push(rangeText(f));
+    if (f.dropMissing) detail.push(`${info.label}: missing left out`);
+  }
+  if (r.requireAnswers) detail.push(up ? "only rows with every private value" : "only people who answered all");
+  if (r.suppress) detail.push(`groups under ${r.policy.k} removed`);
+  const s3 = detail.length ? cap(detail) : "Everything exact";
+  const blocking = d ? d.checks.filter((c) => !c.ok && c.severity !== "warn").length : 0;
+  const s4 = up && !an.upload ? "Upload a file first" : !d ? "Checking…" : d.ok ? "Safe to release" : `${blocking} problem${blocking === 1 ? "" : "s"} to fix`;
+  return [s1, s2, s3, s4];
+}
+function renderStepper() {
+  if (!an.req) return;
+  const sums = stepSummaries(), d = an.last;
+  $("#an-crumbs").innerHTML = STEP_NAMES.map((name, i) => {
+    const n = i + 1, cls = n === 4 && d ? (d.ok ? "safe" : "unsafe") : n < an.step ? "done" : "";
+    return `<button type="button" class="crumb ${cls}" data-go="${n}" ${n === an.step ? 'aria-current="step"' : ""}>
+      <span class="num">${n === 4 && d ? (d.ok ? "✓" : "!") : n}</span><b>${name}</b><small title="${esc(sums[i])}">${esc(sums[i])}</small></button>`;
+  }).join("");
+  $("#an-crumbs").querySelectorAll("[data-go]").forEach((b) => b.onclick = () => goStep(+b.dataset.go));
+  document.querySelectorAll(".step-panel").forEach((pnl) => pnl.hidden = +pnl.dataset.step !== an.step);
+  document.querySelectorAll(".step-nav").forEach((nav) => {
+    const n = +nav.dataset.nav;
+    nav.innerHTML = `${n > 1 ? `<button class="btn" data-go="${n - 1}">← ${STEP_NAMES[n - 2]}</button>` : ""}<span class="spacer"></span>
+      ${n < 4 ? `<button class="btn primary" data-go="${n + 1}">Next: ${STEP_NAMES[n]} →</button>` : ""}`;
+    nav.querySelectorAll("[data-go]").forEach((b) => b.onclick = () => goStep(+b.dataset.go));
+  });
+  // Step 4: every choice in full, each with a way back to change it.
+  const full = stepSummaries(true), p = an.req.policy;
+  $("#an-review").innerHTML = `<p class="sub">Check your choices. The safety checklist on the right must be all green before you can download.</p>
+    <div class="review">${[0, 1, 2].map((i) => `<div class="rv"><b>${i + 1} · ${STEP_NAMES[i]}</b><span>${esc(full[i])}</span><button class="linkbtn" data-go="${i + 1}">Change</button></div>`).join("")}
+      <div class="rv"><b>Release policy</b><span>Groups of ${p.k}+ · ${p.l}+ different answers · gap ≤ ${p.t} · risk ≤ ${Math.round(p.maxAvgRisk * 100)}% · at least ${p.minCohort} ${an.req.upload ? "rows" : "people"} · remove at most ${Math.round(p.maxSuppression * 100)}%</span><button class="linkbtn" data-settings>Change</button></div></div>`;
+  $("#an-review").querySelectorAll("[data-go]").forEach((b) => b.onclick = () => goStep(+b.dataset.go));
+  $("#an-review").querySelector("[data-settings]").onclick = () => $("#an-settings").showModal();
+}
+
+function renderBuilder() {
+  const r = an.req;
+  const up = an.source === "upload";
+  document.querySelectorAll("[data-src]").forEach((b) => b.setAttribute("aria-pressed", String(up ? b.dataset.src === "upload" : b.dataset.src === DB)));
+  $("#an-src-registry").hidden = up; $("#an-src-upload").hidden = !up;
+  $("#an-cols-registry").hidden = up; $("#an-cols-upload").hidden = !up;
+  if (up) renderUploadCols();
+  renderFilters();
+  queueMicrotask(renderStepper);
+  $("#an-roles").innerHTML = Object.entries(ROLE_LABEL).map(([k, v]) =>
+    `<label class="toggle"><input type="checkbox" data-role="${k}" ${r.roles.includes(k) ? "checked" : ""}> ${v}</label>`).join("");
+  $("#an-roles").querySelectorAll("input").forEach((i) => i.onchange = () => {
+    r.roles = [...$("#an-roles").querySelectorAll("input:checked")].map((x) => x.dataset.role); renderBuilder(); scheduleCheck();
+  });
+  $("#an-suppress").checked = r.suppress;
+  $("#an-sup-k").textContent = r.policy.k;
+  $("#an-settings-dot").hidden = Object.keys(an.meta.defaultPolicy).every((k) => an.meta.defaultPolicy[k] === r.policy[k]);
+  $("#an-sup-note").textContent = `Leaves out people whose combination is too rare. At most ${Math.round(r.policy.maxSuppression * 100)}% of people may be removed; change the limit with the ⚙ next to the title.`;
+
+  // 1 · columns: profile checkboxes, plus the identifiers that can never be shared.
+  const oneRole = r.roles.length === 1;
+  if (oneRole) r.fields = r.fields.filter((f) => f.id !== "role");
+  $("#an-cols").innerHTML = an.meta.profile.map((p) => p.id === "role" && oneRole
+    ? `<label class="toggle locked" title="Only one kind of user is included in step 1, so this column would be the same on every row"><input type="checkbox" disabled> ${esc(p.label)} <small>same for everyone</small></label>`
+    : `<label class="toggle"><input type="checkbox" data-col="${p.id}" ${r.fields.some((f) => f.id === p.id) ? "checked" : ""}> ${esc(p.label)}</label>`).join("")
+    + an.meta.directIdentifiers.map((d) => `<label class="toggle locked" title="Never shared: it identifies the person directly"><input type="checkbox" disabled> ${esc(d.label)} <small>🔒 never</small></label>`).join("");
+  $("#an-cols").querySelectorAll("[data-col]").forEach((c) => c.onchange = () => {
+    const id = c.dataset.col;
+    if (c.checked) {
+      const p = pdef(id);
+      r.fields.push({ id, use: p.defaultUse, level: p.bandLevel >= 0 ? p.bandLevel : 0, band: 5, min: null, max: null });
+    } else r.fields = r.fields.filter((f) => f.id !== id);
+    renderBuilder(); scheduleCheck();
+  });
+
+  // 2 · detail per column: profile cards, then one compact block for all survey answers.
+  const KNOWN_TIP = "Others could know this about a person (a neighbour, employer, social media). The tool checks that no combination of these columns singles anyone out (k).";
+  for (const f of r.fields) f.level = Math.min(f.level, fieldInfo(f.id).levels.length - 1); // older saved requests
+  // Survey answers go in the compact list; every other column (profile or uploaded, shared either way) gets a card.
+  const isPrivateRow = (f) => f.id.startsWith("q:");
+  const PRIV_TIP = "Private (research data): only the person told us this. It isn't used to form groups; instead the answers inside each group must vary, so nobody's answer can be deduced.";
+  const profCards = r.fields.map((f, i) => [f, i]).filter(([f]) => !isPrivateRow(f)).map(([f, i]) => {
+    const info = fieldInfo(f.id);
+    const p = pdef(f.id);
+    const banded = p && p.bandLevel === f.level;
+    const w = f.band ?? 5;
+    const bandUi = banded ? `<div class="band"><div class="row"><span>Shown value</span>
+        <input type="range" min="1" max="${p?.numeric?.bandMax ?? 30}" step="${p?.numeric?.scale ?? 1}" value="${w}" data-band="${i}" aria-label="Shown value: range width">
+        <output id="bw-${i}">${esc(shownText(f))}</output></div>
+        <small id="bx-${i}">${esc(bandExample(f))}</small></div>` : "";
+    const nu = p?.numeric;
+    const rangeUi = nu ? `<div class="range"><div class="row"><span>Who's included</span>
+        <output id="rl-${i}">${esc(rangeText(f))}</output>
+        <button class="linkbtn" data-reset="${i}" ${f.min == null && f.max == null ? "hidden" : ""}>Everyone</button></div>
+        <div class="dual" data-dual="${i}"><div class="track"></div><div class="fill"></div>
+          <input type="range" min="${nu.lo}" max="${nu.hi}" step="1" value="${f.min ?? nu.lo}" data-end="min" aria-label="${esc(nu.rangeLabel)} from">
+          <input type="range" min="${nu.lo}" max="${nu.hi}" step="1" value="${f.max ?? nu.hi}" data-end="max" aria-label="${esc(nu.rangeLabel)} to"></div>
+        <small>Drag the two handles to include only part of the range. Fully open = everyone.</small></div>` : "";
+    return `<div class="field ${f.use}"><div class="top"><span class="name">${esc(info.label)}<small class="kind">${f.use === "qi" ? `<b>Others could know it</b><i class="info" tabindex="0" data-tip="${esc(KNOWN_TIP)}">i</i>` : `<b style="color:var(--good)">Private (research data)</b><i class="info" tabindex="0" data-tip="${esc(PRIV_TIP)}">i</i>`}<i hidden>i</i></small></span>
+      <button class="x" data-rm="${i}" aria-label="Remove ${esc(info.label)}">×</button></div>
+      <div class="ctrls">
+        ${info.levels.length > 1 ? `<select data-level="${i}" aria-label="Level of detail">${info.levels.map((l, j) => `<option value="${j}" ${j === f.level ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>`
+          : banded ? "" : `<span class="muted" style="font-size:13px">${esc(info.levels[0])}: no less detailed option. Untick it in step 2 to leave it out.</span>`}
+      </div>${/^Rare/.test(info.levels[f.level] ?? "") ? `<small class="muted">Values fewer than ${r.policy.k} people have become “other” (the group size k from ⚙).</small>` : ""}${bandUi}${rangeUi}
+      ${nu && (f.min != null || f.max != null) ? "" : `<label class="missing-opt"><input type="checkbox" data-drop="${i}" ${f.dropMissing ? "checked" : ""}> Leave out people who didn't give this <span data-missing-n="${f.id}">${missingText(f)}</span></label>`}</div>`;
+  });
+  const qs = r.fields.map((f, i) => [f, i]).filter(([f]) => isPrivateRow(f));
+  const PUB_TIP = "Tick this if an outsider could plausibly know the answer, e.g. employment status (an employer, LinkedIn) or smoking (friends). The answer is then also used to check that nobody stands out, which is stricter.";
+  const qBlock = qs.length ? `<div class="qsel"><div class="head">${up ? "Private columns" : "Survey answers"} · ${qs.length}<small>Private by default. Tick “Others could know it” only for answers an outsider could know.</small><i class="info" tabindex="0" data-tip="${esc(PUB_TIP)}">i</i></div>
+    <label class="req"><input type="checkbox" id="an-require" ${r.requireAnswers ? "checked" : ""}><span>${up ? "Only people with a value in every private column" : "Only people who answered every chosen question"}<small>People who skipped a question count as “no answer”. When most people skipped it, groups can't show different answers and the check fails.</small></span></label>
+    <div class="list">${qs.map(([f, i]) => { const info = fieldInfo(f.id); return `<div class="qrow ${f.use === "qi" ? "public" : ""}">
+      <span class="t">${esc(info.label)}<small>${esc(info.where)}</small></span>
+      ${info.levels.length > 1 ? `<select class="qlevel" data-level="${i}" aria-label="Detail for ${esc(info.label)}">${info.levels.map((l, j) => `<option value="${j}" ${j === f.level ? "selected" : ""}>${j ? "Rare as “other”" : "Exact answer"}</option>`).join("")}</select>` : ""}
+      <label class="pub"><input type="checkbox" data-pub="${i}" ${f.use === "qi" ? "checked" : ""}> Others could know it</label>
+      <button class="x" data-rm="${i}" aria-label="Remove ${esc(info.label)}">×</button></div>`; }).join("")}</div></div>` : "";
+  // Uploaded files: the "only rows with a value in every private column" option sits under the cards.
+  const upReq = up && r.fields.some((f) => isUpload(f.id) && f.use === "sensitive")
+    ? `<label class="req" style="padding:6px 2px"><input type="checkbox" id="an-require" ${r.requireAnswers ? "checked" : ""}><span>Only rows with a value in every private column<small>Empty private values count as “no answer”. When most rows are empty, groups can't show different answers and the check fails.</small></span></label>` : "";
+  $("#an-fields").innerHTML = profCards.length || qBlock ? profCards.join("") + qBlock + upReq
+    : `<p class="muted" style="margin:0">Nothing selected yet. Tick columns or survey answers in step 2.</p>`;
+  $("#an-require")?.addEventListener("change", (e) => { r.requireAnswers = e.target.checked; scheduleCheck(); });
+  $("#an-fields").querySelectorAll("[data-drop]").forEach((c) => c.onchange = () => { r.fields[+c.dataset.drop].dropMissing = c.checked; scheduleCheck(); });
+  $("#an-fields").querySelectorAll("[data-pub]").forEach((c) => c.onchange = () => {
+    const f = r.fields[+c.dataset.pub]; f.use = c.checked ? "qi" : "sensitive";
+    const col = isUpload(f.id) && pdef(f.id); if (col) col.role = f.use; // keep step 2 in sync
+    renderBuilder(); scheduleCheck();
+  });
+  renderTree();
+  $("#an-fields").querySelectorAll("[data-rm]").forEach((b) => b.onclick = () => { r.fields.splice(+b.dataset.rm, 1); renderBuilder(); scheduleCheck(); });
+  $("#an-fields").querySelectorAll("[data-level]").forEach((s) => s.onchange = () => { r.fields[+s.dataset.level].level = +s.value; renderBuilder(); scheduleCheck(); });
+  $("#an-fields").querySelectorAll("[data-band]").forEach((s) => s.oninput = () => {
+    const i = +s.dataset.band, f = r.fields[i];
+    f.band = +s.value;
+    $(`#bw-${i}`).textContent = shownText(f);
+    $(`#bx-${i}`).textContent = bandExample(f);
+    scheduleCheck();
+  });
+  // Two-handle range: a handle at the very end means "no limit" on that side.
+  $("#an-fields").querySelectorAll("[data-dual]").forEach((box) => {
+    const i = +box.dataset.dual, f = r.fields[i], nu = pdef(f.id).numeric;
+    const [a, b] = box.querySelectorAll("input"), fill = box.querySelector(".fill");
+    const paint = () => {
+      const pct = (v) => ((v - nu.lo) / (nu.hi - nu.lo)) * 100;
+      fill.style.left = `${pct(+a.value)}%`; fill.style.width = `${pct(+b.value) - pct(+a.value)}%`;
+    };
+    const update = (moved) => {
+      if (+a.value > +b.value) moved === a ? (a.value = b.value) : (b.value = a.value);
+      f.min = +a.value <= nu.lo ? null : +a.value;
+      f.max = +b.value >= nu.hi ? null : +b.value;
+      paint();
+      $(`#rl-${i}`).textContent = rangeText(f);
+      box.parentElement.querySelector("[data-reset]").hidden = f.min == null && f.max == null;
+      if ($(`#bx-${i}`)) $(`#bx-${i}`).textContent = bandExample(f);
+      scheduleCheck();
+    };
+    a.oninput = () => update(a); b.oninput = () => update(b);
+    // Let the left handle sit on top when both are at the right end, so it can still be dragged.
+    a.style.zIndex = +a.value >= nu.hi - 1 ? 2 : 1;
+    paint();
+  });
+  $("#an-fields").querySelectorAll("[data-reset]").forEach((btn) => btn.onclick = () => {
+    const f = r.fields[+btn.dataset.reset]; f.min = null; f.max = null; renderBuilder(); scheduleCheck();
+  });
+
+  $("#an-policy").innerHTML = POLICY_INPUTS.map(([k, label, min, step, help]) =>
+    `<label><span>${label}<i class="info" tabindex="0" data-tip="${esc(help)}">i</i></span><input type="number" data-p="${k}" min="${min}" step="${step}" value="${r.policy[k]}"></label>`).join("");
+  $("#an-policy").querySelectorAll("input").forEach((i) => i.oninput = () => {
+    const v = Number(i.value); if (!Number.isFinite(v)) return; r.policy[i.dataset.p] = v;
+    $("#an-sup-k").textContent = r.policy.k;
+  $("#an-settings-dot").hidden = Object.keys(an.meta.defaultPolicy).every((k) => an.meta.defaultPolicy[k] === r.policy[k]);
+    $("#an-sup-note").textContent = `Leaves out people whose combination is too rare. At most ${Math.round(r.policy.maxSuppression * 100)}% of people may be removed; change the limit with the ⚙ next to the title.`;
+    scheduleCheck();
+  });
+}
+// "(212 people)" next to "Leave out people who didn't give this", from the latest check.
+const missingText = (f) => {
+  const n = an.last?.missing?.[f.id];
+  return f.dropMissing ? "" : n == null ? "" : n ? `(${fmt(n)} ${n === 1 ? "person" : "people"})` : "(everyone gave it)";
+};
+// The "Shown value" setting in words: "Exact age" or "5-year ranges".
+const shownText = (f) => {
+  const w = f.band ?? 5, c = isUpload(f.id) && pdef(f.id);
+  if (c) return w <= 1 ? (c.kind === "date" ? "Exact year" : "Exact value") : c.kind === "date" ? `${w}-year ranges` : `${fmt(w)}-wide ranges`;
+  return w <= 1 ? (f.id === "age" ? "Exact age" : "Exact year") : `${w}-year ranges`;
+};
+// "Ages 60–79 (born 1946–1966)" / "Everyone": the range filter in words.
+function rangeText(f) {
+  if (f.min == null && f.max == null) return "Everyone";
+  const lo = f.min, hi = f.max, y = new Date().getFullYear();
+  if (isUpload(f.id)) { const l = pdef(f.id)?.label ?? ""; return lo != null && hi != null ? `${l} ${lo}–${hi}` : lo != null ? `${l} ${lo} or more` : `${l} ${hi} or less`; }
+  if (f.id === "age") {
+    const ages = lo != null && hi != null ? `Ages ${lo}–${hi}` : lo != null ? `Aged ${lo} and over` : `Aged ${hi} and under`;
+    const born = lo != null && hi != null ? `born ${y - hi - 1}–${y - lo}` : lo != null ? `born ${y - lo} or earlier` : `born ${y - hi - 1} or later`;
+    return `${ages} (${born})`;
+  }
+  return lo != null && hi != null ? `Diagnosed ${lo}–${hi}` : lo != null ? `Diagnosed in ${lo} or later` : `Diagnosed in ${hi} or earlier`;
+}
+// "The researcher sees ranges like 60–64 · 65–69 · 70–74": what this band width releases.
+function bandExample(f) {
+  const w = f.band ?? 5;
+  if (isUpload(f.id)) {
+    const c = pdef(f.id); if (!c?.numeric) return "";
+    if (w <= 1) return "Each row's exact value.";
+    const start = f.min ?? c.numeric.lo;
+    return `The researcher sees ranges like ${[0, 1, 2].map((j) => `${fmt(start + j * w)}–${fmt(start + j * w + w - 1)}`).join(" · ")}, never the exact value.`;
+  }
+  if (w <= 1) return f.id === "age" ? "Each person's age in whole years, e.g. 67." : "The exact year, e.g. 2019.";
+  const start = f.min ?? 0;
+  // Age: bands from 60 upwards. Diagnosis: the band holding this year and the two before it.
+  const ref = f.id === "age" ? Math.max(start, 60) : Math.max(start, new Date().getFullYear());
+  const lo = start + Math.floor((ref - start) / w) * w;
+  const offsets = f.id === "age" ? [0, 1, 2] : [-2, -1, 0];
+  const bands = offsets.map((j) => `${lo + j * w}–${lo + j * w + w - 1}`);
+  return `The researcher sees ranges like ${bands.join(" · ")}${f.id === "age" ? " (years old)" : ""}, never the exact value.`;
+}
+$("#an-suppress").onchange = (e) => { an.req.suppress = e.target.checked; scheduleCheck(); };
+// Survey picker: category → challenge → question, each with a checkbox (ticking a parent ticks
+// everything shown under it). The filter narrows the tree and opens what matches.
+an.open = new Set();
+function renderTree() {
+  const term = $("#an-q-search").value.trim().toLowerCase();
+  const sel = new Set(an.req.fields.filter((f) => f.id.startsWith("q:")).map((f) => f.id));
+  const hi = (t) => { const e = esc(t); if (!term) return e; const i = t.toLowerCase().indexOf(term); return i < 0 ? e : esc(t.slice(0, i)) + `<mark>${esc(t.slice(i, i + term.length))}</mark>` + esc(t.slice(i + term.length)); };
+  const box = (ids, label) => { const on = ids.filter((id) => sel.has(id)).length;
+    return `<input type="checkbox" data-ids="${ids.join(",")}" data-state="${on === 0 ? "none" : on === ids.length ? "all" : "some"}" aria-label="${esc(label)}" ${on === ids.length && on ? "checked" : ""}>`; };
+  const count = (all) => { const on = all.filter((q) => sel.has(q.id)).length; return `<span class="n ${on ? "on" : ""}">${on ? `${on} of ${all.length}` : `${all.length} question${all.length === 1 ? "" : "s"}`}</span>`; };
+  const groups = new Map();
+  for (const sv of an.meta.surveys) { if (!groups.has(sv.group)) groups.set(sv.group, []); groups.get(sv.group).push(sv); }
+  let html = "";
+  for (const [g, svs] of groups) {
+    const gHit = term && g.toLowerCase().includes(term);
+    const parts = [], gIds = [], gAll = [];
+    for (const sv of svs) {
+      gAll.push(...sv.questions);
+      const sHit = gHit || (term && sv.name.toLowerCase().includes(term));
+      const shown = sv.questions.filter((q) => !term || sHit || q.text.toLowerCase().includes(term));
+      if (!shown.length) continue;
+      const ids = shown.map((q) => q.id); gIds.push(...ids);
+      const key = `s:${sv.id}`;
+      parts.push(`<details class="ch" data-key="${key}" ${term || an.open.has(key) ? "open" : ""}><summary>${box(ids, `All questions in ${sv.name}`)}<span class="lbl">${hi(sv.name)}</span>${count(sv.questions)}</summary>
+        ${shown.map((q) => `<label class="q"><input type="checkbox" data-ids="${q.id}" ${sel.has(q.id) ? "checked" : ""}><span class="lbl">${hi(q.text)}</span><span class="n">${fmt(q.answered)} answered</span></label>`).join("")}</details>`);
+    }
+    if (!parts.length) continue;
+    const key = `g:${g}`;
+    html += `<details class="cat" data-key="${esc(key)}" ${term || an.open.has(key) ? "open" : ""}><summary>${box(gIds, `All questions in ${g}`)}<span class="lbl">${hi(g)}</span>${count(gAll)}</summary>${parts.join("")}</details>`;
+  }
+  const tree = $("#an-qtree");
+  tree.innerHTML = html || `<p class="muted" style="margin:0;padding:8px 10px">No questions match “${esc(term)}”.</p>`;
+  tree.querySelectorAll('[data-state="some"]').forEach((c) => c.indeterminate = true);
+  tree.querySelectorAll("details").forEach((d) => d.ontoggle = () => { if (!term) d.open ? an.open.add(d.dataset.key) : an.open.delete(d.dataset.key); });
+  tree.querySelectorAll("summary input").forEach((c) => c.onclick = (e) => e.stopPropagation()); // ticking doesn't open/close
+  tree.querySelectorAll("input[data-ids]").forEach((c) => c.onchange = () => {
+    const ids = c.dataset.ids.split(","), allOn = ids.every((id) => sel.has(id));
+    if (allOn) an.req.fields = an.req.fields.filter((f) => !ids.includes(f.id));
+    else for (const id of ids) if (!sel.has(id)) an.req.fields.push({ id, use: "sensitive", level: 0 });
+    const y = tree.scrollTop; renderBuilder(); $("#an-qtree").scrollTop = y; scheduleCheck();
+  });
+  const total = an.meta.surveys.reduce((n, sv) => n + sv.questions.length, 0);
+  $("#an-q-count").textContent = `· ${sel.size} of ${total} selected`;
+}
+$("#an-q-search").oninput = renderTree;
+$("#an-q-clear").onclick = () => { an.req.fields = an.req.fields.filter((f) => !f.id.startsWith("q:")); renderBuilder(); scheduleCheck(); };
+$("#an-q-expand").onclick = () => {
+  const openAll = $("#an-q-expand").textContent === "Open all";
+  for (const sv of an.meta.surveys) for (const k of [`g:${sv.group}`, `s:${sv.id}`]) openAll ? an.open.add(k) : an.open.delete(k);
+  $("#an-q-expand").textContent = openAll ? "Close all" : "Open all"; renderTree();
+};
+
+function scheduleCheck(delay = 250) {
+  clearTimeout(an.timer);
+  an.timer = setTimeout(runCheck, delay);
+}
+async function runCheck() {
+  const seq = ++an.seq;
+  if (an.source === "upload" && !an.req.upload) {
+    $("#an-verdict").classList.remove("pass", "fail");
+    $("#an-mobilebar").hidden = true;
+    $("#an-verdict").innerHTML = `<div><div class="big">Upload a CSV to start</div><p>Choose a file in step 1. The checks run as soon as it's read.</p></div>`;
+    $("#an-sections").innerHTML = "";
+    an.last = null; renderStepper();
+    return;
+  }
+  $("#an-results").style.opacity = .6;
+  try {
+    const d = await api("/api/anon/check", { method: "POST", body: JSON.stringify(an.req) });
+    if (seq !== an.seq) return;
+    an.last = d; renderResults(d);
+  } catch (e) {
+    if (seq !== an.seq) return;
+    $("#an-verdict").className = "verdict fail";
+    $("#an-verdict").innerHTML = `<div><div class="big">Can't check this request</div><p>${esc(e.message)}</p></div>`;
+  } finally {
+    if (seq === an.seq) $("#an-results").style.opacity = 1;
+  }
+}
+
+// Results: a verdict, then a safety checklist of four questions. Each question is one line when it
+// passes and opens when it fails, with the details and one-click fixes inside it.
+an.secOpen = {};
+function renderResults(d) {
+  const p = an.req.policy, m = d.after, b = d.before;
+  const blocking = d.checks.filter((c) => !c.ok && c.severity !== "warn");
+  const warnings = d.checks.filter((c) => !c.ok && c.severity === "warn");
+  const unit = an.req.upload ? "rows" : "people";
+  $("#an-verdict").classList.remove("pass", "fail"); $("#an-verdict").classList.add(d.ok ? "pass" : "fail");
+  // Phone status bar: the verdict in one line, tapping it scrolls to the results.
+  $("#an-mobilebar").hidden = false; $("#an-mobilebar").className = d.ok ? "pass" : "";
+  $("#an-mobilebar-text").innerHTML = d.ok ? "<b>Safe to release</b>" : `<b>Not safe yet</b> · ${blocking.length} check${blocking.length > 1 ? "s" : ""} failing`;
+  $("#an-verdict").innerHTML = `<div style="flex:1;min-width:220px"><div class="big">${d.ok ? "Safe to release" : "Not safe to release yet"}</div>
+    <p>${d.ok ? `Every required check passes${warnings.length ? `, with ${warnings.length} warning${warnings.length > 1 ? "s" : ""} to review` : ""}.` : `${blocking.length} required check${blocking.length > 1 ? "s" : ""} failing. Open the red items below to see why and how to fix them.`}</p>
+    <div class="db">Checked on: <b>${sourceName()}</b> · ${fmt(m.n)} ${unit}<span class="n"> · ${fmt(m.unique)} one of a kind · ${fmt(m.atRisk)} in groups smaller than ${p.k}${d.suppressed ? ` · ${fmt(d.suppressed)} removed` : ""}</span></div></div>
+    <button class="btn" id="an-suggest" ${d.ok ? "disabled" : ""}>Suggest safer settings</button>
+    <button class="btn" id="an-preview-btn" ${m.n ? "" : "disabled"}>Preview data</button>
+    <button class="btn primary" id="an-download" ${d.ok ? "" : "disabled"} title="${d.ok ? "" : "Locked until every required check passes"}">${d.ok ? "Download extract (CSV)" : `Download locked: fix ${blocking.length} check${blocking.length > 1 ? "s" : ""}`}</button>`;
+  $("#an-suggest").onclick = runSuggest;
+  $("#an-download").onclick = download;
+  $("#an-preview-btn").onclick = openPreview;
+  renderStepper();
+  for (const f of an.req.fields) { const el = document.querySelector(`[data-missing-n="${f.id}"]`); if (el) el.textContent = missingText(f); }
+
+  const chk = (id) => d.checks.find((c) => c.id === id);
+  const cls = (c) => c.ok ? "ok" : c.severity === "warn" ? "warn" : "no";
+  const icon = (st) => `<span class="ic ${st}" aria-label="${st === "ok" ? "Passes" : st === "warn" ? "Needs a look" : "Fails"}">${st === "ok" ? "✓" : st === "warn" ? "!" : "✕"}</span>`;
+  const item = (c) => c ? `<li class="${cls(c)}${c.trivial ? " trivial" : ""}"><span class="ic">${c.ok ? "✓" : c.severity === "warn" ? "!" : "✕"}</span><span>${esc(c.label)}${c.tech ? `<span class="tech">${esc(c.tech)}</span>` : ""}<small>${esc(c.detail)}</small></span></li>` : "";
+  const fixBtn = (o, i) => `<div class="fix"><div><b>${esc(o.title)}</b><small>${esc(o.cost.replace(/ Suggest then runs again\.$/, ""))}</small></div><button class="btn small" data-fix="${i}">${esc(o.action.label.replace(/ and try again$/, ""))}</button></div>`;
+  const opts = d.fixes?.options ?? [];
+  const optsFor = (pred) => opts.map((o, i) => [o, i]).filter(([o]) => pred(o));
+  const sensIds = new Set(d.sensFields.map((f) => f.id));
+
+  // 1 · Can someone be picked out?
+  const singleIds = ["cohort", "k", "unique", "avgRisk", "suppression"];
+  const singleFail = singleIds.some((id) => chk(id) && !chk(id).ok);
+  const lo = { "1": 1, "2": 2, "3–4": 3, "5–9": 5, "10–19": 10, "20+": 20 };
+  const max = Math.max(1, ...m.classSizes.map((c) => c.people));
+  const singleFixes = optsFor((o) => o.action.type === "suppress" || (o.action.type === "drop" && !sensIds.has(o.action.id)));
+  const single = {
+    key: "single", title: "Can someone be picked out?", status: singleFail ? "no" : "ok",
+    summary: !m.n ? "The file is empty." : singleFail
+      ? `${fmt(m.unique)} ${m.unique === 1 ? "is" : "are"} one of a kind and ${fmt(m.atRisk)} in groups smaller than ${p.k}${chk("cohort")?.ok === false ? `; only ${fmt(m.n)} ${unit}` : ""}.`
+      : `Everyone is in a group of ${p.k} or more. Overall risk ${(m.avgRisk * 100).toFixed(1)}%.`,
+    body: `<ul class="checklist">${singleIds.map((id) => item(chk(id))).join("")}</ul>
+      ${singleFail ? `<div class="fixes"><div class="fx-h">Ways to fix it</div>
+        <div class="fix"><div><b>Make columns less detailed</b><small>Suggest widens ranges and groups values, column by column, until it passes or can't go further.</small></div><button class="btn small" data-suggest>Suggest</button></div>
+        ${singleFixes.map(([o, i]) => fixBtn(o, i)).join("")}
+        ${(d.fixes?.notes ?? []).map((n) => `<p class="muted" style="font-size:12px;margin:0">${esc(n)}</p>`).join("")}</div>` : ""}
+      <details class="sub" ${singleFail ? "open" : ""}><summary>What drives the risk</summary>${d.impact.length
+        ? `<p class="sub">Right now ${fmt(b.unique)} are one of a kind. For each profile column: how many would still be, with less detail or without it.</p>
+          <div class="scroll-x"><table class="plain"><tr><th>Column</th><th>Shown now</th><th class="num">Values</th><th>With less detail</th><th class="num">Without it</th></tr>
+          ${d.impact.map((f) => `<tr><td>${esc(f.label)}</td><td>${esc(f.level)}</td><td class="num">${fmt(f.distinct)}</td>
+            <td>${f.coarser ? `${esc(f.coarser.level)}: <b>${fmt(f.coarser.unique)}</b>` : `<span class="muted">no less detailed option</span>`}</td>
+            <td class="num"><b>${fmt(f.without.unique)}</b></td></tr>`).join("")}</table></div>` : `<p class="muted">No profile columns.</p>`}</details>
+      <details class="sub"><summary>Rarest combinations</summary>${d.qiFields.length && d.smallest.length
+        ? `<p class="sub">The smallest groups, before removing anyone: the people easiest to single out.</p>
+          <div class="scroll-x"><table class="plain"><tr><th class="num">People</th>${d.qiFields.map((f) => `<th>${esc(f.label)}</th>`).join("")}</tr>
+          ${d.smallest.map((g) => `<tr><td class="num ${g.size < p.k ? "bad-n" : ""}">${fmt(g.size)}</td>${g.values.map((v, j) => `<td>${esc(d.qiFields[j]?.id === "role" ? (ROLE_LABEL[v] ?? v) : v)}</td>`).join("")}</tr>`).join("")}</table></div>`
+        : `<p class="muted">No profile columns, so everyone is in one group.</p>`}</details>
+      <details class="sub"><summary>Group sizes</summary><div class="hbars">${m.classSizes.map((c) => `<div class="hbar"><span class="name">Groups of ${c.label}</span>
+        <span class="track"><span class="fill${c.people ? (lo[c.label] < p.k ? " risk" : "") : " zero"}" style="width:${(c.people / max) * 82}%"></span>
+        <span class="val">${fmt(c.people)} <span>· ${fmt(c.groups)} group${c.groups === 1 ? "" : "s"}</span></span></span></div>`).join("")}</div></details>`,
+  };
+
+  // 2 · Can private answers be guessed?
+  const lBad = d.checks.filter((c) => c.id.startsWith("l:") && !c.ok), tBad = d.checks.filter((c) => c.id.startsWith("t:") && !c.ok);
+  const nPriv = d.sensFields.length;
+  const privFix = optsFor((o) => o.action.type === "drop" && sensIds.has(o.action.id));
+  const fewAnswered = d.sensFields.some((f, i) => m.n && m.sensitive[i].answered / m.n < 0.5);
+  const priv = {
+    key: "private", title: "Can private answers be guessed?", status: lBad.length ? "no" : tBad.length ? "warn" : "ok",
+    summary: !nPriv ? "No private columns are shared." : lBad.length
+      ? `${lBad.length} of ${nPriv} private column${nPriv > 1 ? "s" : ""} would give away answers in some groups.`
+      : tBad.length ? `Answers vary in every group. ${tBad.length} column${tBad.length > 1 ? "s differ" : " differs"} noticeably from the overall mix (warning only).`
+      : nPriv === 1 ? "Every group has different answers in the private column." : `Every group has different answers in all ${nPriv} private columns.`,
+    body: !nPriv ? `<p class="muted">Add survey answers or private columns in step 2 to share research data.</p>` : `
+      <p class="sub">Variety = fewest different answers in any group (must be ${p.l}+; no answer counts as one). Gap = how far a group's answers are from everyone's, 0 to 1 (warning above ${p.t}).</p>
+      <div class="scroll-x"><table class="plain"><tr><th></th><th>${an.req.upload ? "Column" : "Question"}</th><th class="num">Answered</th><th class="num">Variety<i class="info" tabindex="0" data-tip="${esc(VARIETY_TIP(p))}">i</i></th><th class="num">Gap<i class="info" tabindex="0" data-tip="${esc(GAP_TIP(p))}">i</i></th><th></th></tr>${d.sensFields.map((f, i) => {
+        const s = m.sensitive[i], lok = s.l == null || s.l >= p.l, tok = s.t == null || s.t <= p.t;
+        return `<tr><td>${icon(!lok ? "no" : !tok ? "warn" : "ok")}</td><td>${esc(f.label)}</td>
+          <td class="num ${m.n && s.answered / m.n < 0.5 ? "bad-n" : ""}" style="white-space:nowrap" title="${fmt(m.n - s.answered)} didn't answer">${fmt(s.answered)} of ${fmt(m.n)}</td>
+          <td class="num ${!lok ? "bad-n" : ""}">${s.l ?? "–"}</td><td class="num ${!tok ? "bad-n" : ""}">${s.t ?? "–"}</td>
+          <td>${!lok ? `<button class="linkbtn" data-dropcol="${f.id}">Remove</button>` : ""}</td></tr>`;
+      }).join("")}</table></div>
+      ${lBad.length && fewAnswered && !an.req.requireAnswers ? `<div class="fixes"><div class="fix"><div><b>Keep only ${unit} with an answer</b><small>Many ${unit} skipped some of these, so groups contain just “no answer”. Same as the option in step 3.</small></div><button class="btn small" data-require>Apply</button></div></div>` : ""}
+      ${privFix.length ? `<div class="fixes">${privFix.map(([o, i]) => fixBtn(o, i)).join("")}</div>` : ""}`,
+  };
+
+  // 3 · Are identifiers left out?
+  const idWarn = d.checks.filter((c) => c.id.startsWith("id:"));
+  const ids = {
+    key: "ids", title: "Are identifiers left out?", status: idWarn.length ? "warn" : "ok",
+    summary: idWarn.length ? `${idWarn.length} ID column${idWarn.length > 1 ? "s are" : " is"} shared: the file is pseudonymous, not anonymous.`
+      : an.req.upload ? "No ID columns are shared; rows get random study IDs." : "Email, names and user IDs are never shared; rows get random study IDs.",
+    body: `<ul class="checklist">${item(chk("direct"))}${item(chk("fields"))}${idWarn.map(item).join("")}</ul>
+      ${idWarn.length ? `<p class="sub">To leave an ID out, set it to “Leave out” in step 2.</p>` : ""}`,
+  };
+
+  // 4 · Regulations
+  const c = d.compliance;
+  const fw = (name, sub, x) => {
+    const fails = x.rules.filter((r) => r.status === "fail").length, rev = x.rules.filter((r) => r.status === "review").length;
+    return `<div class="fw ${x.status}"><div class="fw-head"><span class="badge" aria-hidden="true">${x.status === "fail" ? "✕" : "✓"}</span><div><b>${name}</b><small>${sub}</small></div></div>
+      <div class="fw-status">${x.status === "fail" ? `${fails} rule${fails > 1 ? "s" : ""} not met` : "Every measurable rule is met"}${rev ? `<span class="muted" style="font-weight:400"> · ${rev} to confirm yourself</span>` : ""}</div>
+      <ul>${x.rules.map((r) => `<li class="${r.status}"><span class="ic" aria-label="${r.status === "ok" ? "Met" : r.status === "fail" ? "Not met" : "To confirm"}">${r.status === "ok" ? "✓" : r.status === "fail" ? "✕" : "?"}</span><span>${esc(r.label)}<small>${esc(r.detail)}</small></span></li>`).join("")}</ul></div>`;
+  };
+  const toConfirm = c ? [...c.gdpr.rules, ...c.hipaa.rules].filter((r) => r.status === "review").length : 0;
+  const regs = c && {
+    key: "regs", title: "Regulations", status: c.gdpr.status === "fail" || c.hipaa.status === "fail" ? "no" : "ok",
+    summary: `GDPR ${c.gdpr.status === "fail" ? "✕" : "✓"} · HIPAA Safe Harbor ${c.hipaa.status === "fail" ? "✕" : "✓"} · ${toConfirm} point${toConfirm === 1 ? "" : "s"} to confirm yourself.`,
+    body: `<p class="sub">Checked against the file as it would be exported. Not legal advice: your data protection officer makes the final call. HIPAA only matters for US recipients.</p>
+      <div class="fws">${fw("GDPR (EU)", "Singling out, linkability, inference", c.gdpr)}${fw("HIPAA Safe Harbor (US)", "The 18 identifier types", c.hipaa)}</div>`,
+  };
+
+  const secs = [single, priv, ids, regs].filter(Boolean);
+  $("#an-sections").innerHTML = `<div class="sec-head"><h2>Safety checklist</h2><span class="muted">${secs.filter((x) => x.status === "ok").length} of ${secs.length} fine</span></div>
+    ${secs.map((x) => `<details class="sec ${x.status}" data-sec="${x.key}" ${an.secOpen[x.key] ? "open" : ""}>
+      <summary>${icon(x.status)}<span class="st"><b>${x.title}</b><small>${esc(x.summary)}</small></span><span class="chev" aria-hidden="true">›</span></summary>
+      <div class="sec-body">${x.body}</div></details>`).join("")}`;
+  // Collapsed by default; remember what the admin opened or closed by hand.
+  $("#an-sections").querySelectorAll("details.sec > summary").forEach((sm) => sm.onclick = () => { const el = sm.parentElement; an.secOpen[el.dataset.sec] = !el.open; });
+  $("#an-sections").querySelectorAll("[data-fix]").forEach((btn) => btn.onclick = () => applyFix(opts[+btn.dataset.fix].action));
+  $("#an-sections").querySelectorAll("[data-suggest]").forEach((btn) => btn.onclick = runSuggest);
+  $("#an-sections").querySelectorAll("[data-dropcol]").forEach((btn) => btn.onclick = () => applyFix({ type: "drop", id: btn.dataset.dropcol }));
+  $("#an-sections").querySelectorAll("[data-require]").forEach((btn) => btn.onclick = () => { an.req.requireAnswers = true; renderBuilder(); scheduleCheck(0); });
+}
+
+// Tooltips for the "Can private answers be guessed?" table, with the current policy values.
+const VARIETY_TIP = (p) => `<b>Variety</b>: the fewest different answers found inside any one group (people who share the same profile values). It must be at least ${p.l}; below that the check fails and the row shows ✕.<br><br>
+<b>Example</b>: 6 women aged 70–79 from Germany all answered “yes” to “Do you smoke?”. Variety = 1. Anyone who knows their neighbour is a woman in her 70s in Germany now knows she smokes, without finding her row.<br><br>
+If one of the 6 had answered “no”, or skipped the question, variety = 2: you can't tell who said what. Skipping counts as an answer of its own.`;
+const GAP_TIP = (p) => `<b>Gap</b>: how different a group's answers are from everyone's, from 0 (same mix) to 1 (completely different). Above ${p.t} the row shows ! as a warning; it doesn't block the download.<br><br>
+<b>Example</b>: overall, 20% answered “yes” to chemical exposure at work. In the group “men, 60–79, Germany”, 90% said “yes”. Gap = 0.9 − 0.2 = 0.7. Variety is fine (there are “no” answers too), so nobody's answer is revealed, but knowing a neighbour is in that group makes “yes” very likely.<br><br>
+<b>Why only a warning</b>: it's a strong guess, not a certainty, and it may simply be the real finding the research is about. Check whether such a likely answer could harm someone (e.g. a stigmatising condition); if so, make the profile columns less detailed or leave the column out.`;
+
+// One-click fixes, from the results or from Suggest's pop-up.
+function applyFix(a, { thenSuggest = false } = {}) {
+  if (a.type === "suppress") {
+    an.req.suppress = true;
+    if (a.maxSuppression) an.req.policy.maxSuppression = a.maxSuppression;
+  } else if (a.type === "drop") {
+    an.req.fields = an.req.fields.filter((f) => f.id !== a.id);
+    const col = isUpload(a.id) && pdef(a.id); if (col) col.role = "leave"; // keep step 2 in sync
+  }
+  renderBuilder();
+  if (thenSuggest) runSuggest(); else scheduleCheck(0);
+}
+
+// Suggest: shows its result in a pop-up you can't miss, with buttons for what would make it safe.
+async function runSuggest() {
+  const dlg = $("#an-suggest-dlg");
+  dlg.innerHTML = `<div class="head"><h2 id="an-suggest-title">Looking for safer settings…</h2></div>
+    <div class="mbody"><p class="muted">Trying less detailed versions of each profile column.</p></div>`;
+  if (!dlg.open) dlg.showModal();
+  try {
+    const s = await api("/api/anon/suggest", { method: "POST", body: JSON.stringify(an.req) });
+    const before = JSON.parse(JSON.stringify(an.req));
+    an.req.fields = s.fields; an.req.suppress = s.suppress;
+    renderBuilder();
+    an.last = s.result; renderResults(s.result);
+    const ok = s.result.ok;
+    dlg.innerHTML = `<div class="head ${ok ? "pass" : "fail"}"><h2 id="an-suggest-title">${ok ? "Safe settings found" : "Still not safe with these columns"}</h2></div>
+      <div class="mbody">
+        ${s.steps.length ? `<p>${ok ? "These changes were applied and the file is now safe to release:" : "These changes were applied, but they aren't enough:"}</p>
+          <ol>${s.steps.map((x) => `<li>${esc(x)}</li>`).join("")}</ol>` : ok ? `<p>No changes needed: it's already safe to release.</p>` : `<p>Making the columns less detailed doesn't help any further.</p>`}
+        ${ok ? "" : `${s.why?.limits ? `<p class="muted">${esc(s.why.limits)}</p>` : ""}
+          ${s.why?.options?.length ? `<h3>${s.why.options.length > 1 ? `${s.why.options.length} ways to make it safe. Pick one:` : "One way to make it safe:"}</h3>
+            <div class="opts">${s.why.options.map((o, i) => `<div class="opt"><b>${s.why.options.length > 1 ? `${String.fromCharCode(65 + i)}. ` : ""}${esc(o.title)}</b><p>${esc(o.cost)}</p><button class="btn small" data-act="${i}">${esc(o.action.label)}</button></div>`).join("")}</div>`
+            : `<h3>No single change makes it safe</h3><p>Try narrowing “Who's included”, leaving out people with missing values in step 3, or removing ${an.req.upload ? "private columns" : "survey questions"}.</p>`}
+          ${(s.why?.notes ?? []).map((n) => `<p class="muted" style="font-size:13px">${esc(n)}</p>`).join("")}
+          <p class="muted" style="font-size:12px">Suggest only makes columns less detailed on its own. Leaving out people or removing a column changes what the researcher gets, so it's your choice.</p>`}
+      </div>
+      <div class="foot">${s.steps.length ? `<button class="btn" data-undo>Undo these changes</button>` : ""}<button class="btn primary" data-close>${ok ? "Keep these settings" : "Close"}</button></div>`;
+    dlg.querySelector("[data-close]").onclick = () => dlg.close();
+    dlg.querySelector("[data-undo]")?.addEventListener("click", () => { an.req = before; dlg.close(); renderBuilder(); scheduleCheck(0); });
+    dlg.querySelectorAll("[data-act]").forEach((b) => b.onclick = () => {
+      const a = s.why.options[+b.dataset.act].action;
+      if (a.type === "suppress") dlg.close();
+      applyFix(a, { thenSuggest: a.type === "drop" }); // removing a column: try Suggest again without it
+    });
+  } catch (e) {
+    dlg.innerHTML = `<div class="head fail"><h2 id="an-suggest-title">Suggest failed</h2></div><div class="mbody"><p class="error">${esc(e.message)}</p></div>
+      <div class="foot"><button class="btn primary" data-close>Close</button></div>`;
+    dlg.querySelector("[data-close]").onclick = () => dlg.close();
+  }
+}
+
+const sourceName = () => an.upload ? `Your file: ${an.upload.name}` : "No file yet";
+// Preview pop-up: the first 200 rows exactly as the CSV would contain them.
+async function openPreview() {
+  const dlg = $("#an-preview");
+  dlg.innerHTML = `<div class="head"><h2 id="an-preview-title">Preview of the CSV</h2><span class="muted">${sourceName()}</span><div class="spacer" style="flex:1"></div><button class="btn small" data-close>Close</button></div>
+    <div class="body"><div class="loading">Loading rows…</div></div>`;
+  dlg.querySelector("[data-close]").onclick = () => dlg.close();
+  dlg.showModal();
+  try {
+    const p = await api("/api/anon/preview", { method: "POST", body: JSON.stringify(an.req) });
+    dlg.innerHTML = `<div class="head"><h2 id="an-preview-title">Preview of the CSV</h2>
+        <span class="muted">${p.total > p.rows.length ? `First ${fmt(p.rows.length)} of ${fmt(p.total)} rows` : `${fmt(p.total)} rows`} · ${p.header.length} columns · ${sourceName()}</span>
+        <div class="spacer" style="flex:1"></div>
+        ${p.ok ? `<button class="btn primary small" data-dl>Download CSV</button>` : ""}<button class="btn small" data-close>Close</button></div>
+      ${p.ok ? "" : `<p class="note">Not safe to release yet: this is what the file would contain, but it can't be downloaded until every required check passes.</p>`}
+      <div class="body"><table><thead><tr>${p.header.map((h) => `<th title="${esc(h)}">${esc(h)}</th>`).join("")}</tr></thead>
+        <tbody>${p.rows.map((r) => `<tr>${r.map((v) => v === "" || v === "(not given)" ? `<td class="empty">${v === "" ? "–" : esc(v)}</td>` : `<td title="${esc(v)}">${esc(v)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+    dlg.querySelector("[data-close]").onclick = () => dlg.close();
+    dlg.querySelector("[data-dl]")?.addEventListener("click", () => { dlg.close(); download(); });
+  } catch (e) {
+    dlg.querySelector(".loading").textContent = e.message;
+  }
+}
+$("#an-settings-btn").onclick = () => $("#an-settings").showModal();
+// The user guide (docs/user-guide.md, built into the page). Its "##" headings make the contents list.
+function openHelp() {
+  const doc = $("#an-help-doc"), toc = $("#an-help-toc");
+  if (!toc.children.length) {
+    const slug = (t) => t.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    doc.querySelectorAll("h2, h3").forEach((h) => h.id = `help-${slug(h.textContent)}`);
+    toc.innerHTML = [...doc.querySelectorAll("h2")].map((h) => `<a href="#${h.id}" data-to="${h.id}">${esc(h.textContent)}</a>`).join("");
+    toc.querySelectorAll("a").forEach((a) => a.onclick = (e) => { e.preventDefault(); doc.querySelector(`#${a.dataset.to}`).scrollIntoView({ behavior: "smooth", block: "start" }); });
+    // Highlight the section being read.
+    doc.addEventListener("scroll", () => {
+      let cur = null;
+      for (const h of doc.querySelectorAll("h2")) if (h.offsetTop - doc.offsetTop <= doc.scrollTop + 40) cur = h.id;
+      toc.querySelectorAll("a").forEach((a) => a.classList.toggle("on", a.dataset.to === cur));
+    });
+  }
+  $("#an-help").showModal();
+  doc.dispatchEvent(new Event("scroll"));
+}
+$("#an-help-btn").onclick = openHelp;
+$("#an-help-close").onclick = () => $("#an-help").close();
+$("#an-settings-close").onclick = () => $("#an-settings").close();
+$("#an-policy-reset").onclick = () => { an.req.policy = { ...an.meta.defaultPolicy }; renderBuilder(); scheduleCheck(0); };
+for (const d of [$("#an-preview"), $("#an-suggest-dlg"), $("#an-settings"), $("#an-help")]) d.addEventListener("click", (e) => { if (e.target === e.currentTarget) e.currentTarget.close(); }); // click outside closes
+
+// Phones: hide the bottom status bar while the verdict itself is on screen.
+new IntersectionObserver(([e]) => $("#an-mobilebar").classList.toggle("near", e.isIntersecting)).observe($("#an-verdict"));
+
+// The verdict turns into a compact bar once it sticks under the menu.
+new IntersectionObserver(([e]) => $("#an-verdict").classList.toggle("stuck", !e.isIntersecting && e.boundingClientRect.top < 200 && innerWidth > 980),
+  { rootMargin: `-${(document.querySelector("header.top")?.offsetHeight ?? 0) + 1}px 0px 0px 0px` }).observe($("#an-verdict-sentinel"));
+
+async function download() {
+  const btn = $("#an-download");
+  btn.disabled = true;
+  try {
+    const csv = await Engine.extract(null, "", an.req);
+    const base = (an.upload?.name ?? "data").replace(/\.[^.]+$/, "");
+    const name = `${base}-anonymized-${new Date().toISOString().slice(0, 10)}.csv`;
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const a = Object.assign(document.createElement("a"), { href: url, download: name });
+    document.body.append(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  } catch (e) {
+    alert(e.message);
+  } finally {
+    btn.disabled = !an.last?.ok;
+  }
+}
+
+
+initAnon();
+</script>
+</body>
+</html>

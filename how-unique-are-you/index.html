@@ -1,0 +1,391 @@
+<!doctype html>
+<!--
+  "How unique are you?": the landing page of the Data Anonymizer.
+  A visitor describes themselves (from lists, no free text) and sees roughly how many of Europe's tech
+  professionals share that profile, then blurs details until they'd hide among 5 people.
+  Everything is computed in this page from fixed statistics; nothing is stored or sent anywhere.
+  Built into dist/index.html by build.ts. The tool itself is dist/anonymizer.html.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- No network access at all: the page can't send anything anywhere, even by mistake. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'">
+<meta name="description" content="Describe yourself and see how many of Europe's 10 million tech professionals share your profile. Then try to hide in the crowd. Nothing leaves your browser.">
+<title>How unique are you? · Data Anonymizer</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22%3E%3Crect width=%2264%22 height=%2264%22 rx=%2214%22 fill=%22%23c2185b%22/%3E%3Ccircle cx=%2232%22 cy=%2224%22 r=%229%22 fill=%22white%22/%3E%3Cpath d=%22M16 50c2-9 9-14 16-14s14 5 16 14%22 fill=%22white%22/%3E%3C/svg%3E">
+<!-- Link previews (LinkedIn, etc.). build.ts fills  from the SITE_URL variable. -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="How unique are you?">
+<meta property="og:description" content="Pick a few ordinary details and see how many of Europe's 10 million tech professionals share them. Then try to hide in the crowd. Nothing leaves your browser.">
+<meta property="og:image" content="preview.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="627">
+<meta property="og:url" content="">
+<meta name="twitter:card" content="summary_large_image">
+<style>
+:root {
+  --bg: #f8f6f7; --surface: #ffffff; --fg: #1f1a1d; --muted: #6b6168; --line: #e6dfe3; --hover: #f3eef1;
+  --accent: #c2185b; --accent-ink: #ffffff; --accent-soft: #fbe6ef;
+  --good: #1f7a4d; --good-soft: #def3e8; --warn: #9a5b00; --warn-soft: #fdf1dc; --bad: #b3261e; --bad-soft: #fbe3e1;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: dark) { :root {
+  --bg: #141113; --surface: #1d191b; --fg: #eee7eb; --muted: #a59aa1; --line: #342c31; --hover: #262024;
+  --accent: #f06292; --accent-ink: #1d191b; --accent-soft: #3a1d29;
+  --good: #6fd3a0; --good-soft: #173528; --warn: #f0b860; --warn-soft: #3a2c14; --bad: #ff8a80; --bad-soft: #3b1f1d; color-scheme: dark } }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.55 var(--body); }
+button, select { font: inherit; color: inherit; }
+main { max-width: 820px; margin: 0 auto; padding: 28px 16px 64px; display: grid; gap: 18px; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 20px 22px; }
+h1 { font-size: clamp(28px, 6vw, 40px); line-height: 1.1; margin: 0 0 10px; letter-spacing: -0.02em; }
+h2 { font-size: 20px; margin: 0 0 4px; }
+.sub { color: var(--muted); margin: 0; }
+.eyebrow { color: var(--accent); font-weight: 600; font-size: 13px; letter-spacing: .06em; text-transform: uppercase; margin: 0 0 10px; }
+.hero { padding: 30px 26px; }
+.hero p { max-width: 60ch; }
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.btn { border: 1px solid var(--line); background: var(--surface); border-radius: 10px; padding: 10px 16px; cursor: pointer; font-weight: 500; text-decoration: none; color: var(--fg); display: inline-flex; align-items: center; gap: 6px; }
+.btn:hover { background: var(--hover); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn.primary:hover { filter: brightness(1.06); }
+.btn.small { padding: 6px 11px; font-size: 13px; border-radius: 8px; }
+.trust { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 16px; color: var(--muted); font-size: 13px; }
+.trust span::before { content: "✓ "; color: var(--good); font-weight: 700; }
+.step-h { display: flex; gap: 10px; align-items: baseline; margin-bottom: 12px; }
+.step-h .n { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); font-weight: 600; font-size: 13px; flex: none; }
+.form { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px 16px; margin-top: 6px; }
+.form label { display: grid; gap: 4px; font-size: 13px; font-weight: 500; }
+.form select { width: 100%; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); padding: 8px 10px; font-size: 14px; }
+.form select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.hint { color: var(--muted); font-size: 12px; margin-top: 10px; }
+.big { font-size: clamp(44px, 12vw, 72px); font-weight: 700; line-height: 1; letter-spacing: -0.03em; }
+.verdict { display: grid; gap: 10px; }
+.verdict .tag { justify-self: start; border-radius: 999px; padding: 4px 12px; font-weight: 600; font-size: 13px; }
+.tag.bad { background: var(--bad-soft); color: var(--bad); } .tag.warn { background: var(--warn-soft); color: var(--warn); } .tag.good { background: var(--good-soft); color: var(--good); }
+.bits { display: grid; gap: 6px; margin-top: 14px; }
+.bit { display: grid; grid-template-columns: 150px minmax(0, 1fr) 64px; gap: 10px; align-items: center; font-size: 13px; }
+.bit .track { display: block; height: 10px; background: var(--hover); border-radius: 5px; overflow: hidden; }
+.bit .fill { display: block; height: 100%; background: var(--accent); border-radius: 5px; }
+.bit .v { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+.bit.total { border-top: 1px solid var(--line); padding-top: 6px; font-weight: 600; }
+.bit.total .fill { background: var(--fg); }
+.need { font-size: 13px; color: var(--muted); margin-top: 8px; }
+.game { display: grid; gap: 8px; margin-top: 12px; }
+.g { display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 4px 12px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); }
+.g .lbl { font-weight: 500; font-size: 13px; }
+.g .lbl small { display: block; color: var(--muted); font-weight: 400; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 4px 11px; font-size: 13px; cursor: pointer; }
+.chip:hover { background: var(--hover); }
+.chip[aria-pressed=true] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 500; }
+.g.tip .lbl::after { content: "Try blurring this"; display: inline-block; margin-top: 2px; font-size: 11px; font-weight: 600; color: var(--warn); }
+.meter { position: sticky; top: 0; z-index: 3; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: grid; gap: 8px; }
+.meter .row { justify-content: space-between; }
+.meter .crowd { font-size: 22px; font-weight: 700; }
+.meter .bar { height: 10px; border-radius: 5px; background: var(--hover); overflow: hidden; }
+.meter .bar span { display: block; height: 100%; border-radius: 5px; background: var(--bad); transition: width .25s, background .25s; }
+.meter.ok .bar span { background: var(--good); }
+.meter .kept { color: var(--muted); font-size: 13px; }
+.win { border-radius: 10px; padding: 12px 14px; background: var(--good-soft); color: var(--good); font-weight: 500; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; margin-top: 10px; }
+.card { border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
+.card h3 { margin: 0 0 6px; font-size: 15px; }
+.card p { margin: 0; color: var(--muted); font-size: 13.5px; }
+.cta { display: grid; gap: 12px; text-align: center; justify-items: center; }
+details.method summary { cursor: pointer; font-weight: 600; }
+details.method { font-size: 13.5px; }
+details.method li { margin: 4px 0; }
+details.method table { border-collapse: collapse; font-size: 12.5px; margin: 8px 0; width: 100%; }
+details.method td, details.method th { border-bottom: 1px solid var(--line); padding: 4px 6px; text-align: left; vertical-align: top; }
+footer { text-align: center; color: var(--muted); font-size: 12.5px; }
+[hidden] { display: none !important; }
+@media (max-width: 560px) {
+  .panel { padding: 16px; } .hero { padding: 22px 16px; }
+  .bit { grid-template-columns: 110px minmax(0, 1fr) 52px; }
+  .g { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) { .meter .bar span { transition: none; } }
+</style>
+</head>
+<body>
+<main>
+  <section class="panel hero">
+    <p class="eyebrow">Data Anonymizer</p>
+    <h1>How unique are you?</h1>
+    <p class="sub">Describe yourself in a few clicks. We estimate how many of Europe's <b>10 million tech professionals</b> share your profile. Then try to hide in the crowd, the way anonymization does with real data.</p>
+    <div class="row" style="margin-top:18px">
+      <a class="btn primary" href="#about-you">Start: it takes a minute</a>
+    </div>
+    <div class="trust"><span>Nothing leaves your browser</span><span>Nothing is stored</span><span>No tracking, no sign-up</span></div>
+  </section>
+
+  <section class="panel" id="about-you">
+    <div class="step-h"><span class="n">1</span><div><h2>About you</h2><p class="sub">Skip anything you like. Fewer answers means a bigger crowd.</p></div></div>
+    <div class="form" id="form"></div>
+    <div class="row" style="margin-top:16px"><button class="btn primary" id="go" type="button">Show me how unique I am</button></div>
+    <p class="hint">Only choices from lists: you never type anything personal. The page has no network access, so it can't send your answers anywhere.</p>
+  </section>
+
+  <section class="panel" id="result" hidden>
+    <div class="step-h"><span class="n">2</span><div><h2>Your crowd</h2><p class="sub" id="crowd-sub"></p></div></div>
+    <div class="verdict" id="verdict"></div>
+    <div class="bits" id="bits"></div>
+    <p class="need" id="need"></p>
+  </section>
+
+  <section class="panel" id="hide" hidden>
+    <div class="step-h"><span class="n">3</span><div><h2>Now hide in the crowd</h2><p class="sub">Blur your details until at least <b>5 people</b> match you, keeping as much detail as you can. That's how a dataset is anonymized: no one may stand out.</p></div></div>
+    <div class="meter" id="meter"></div>
+    <div class="game" id="game"></div>
+  </section>
+
+  <section class="panel" id="lesson" hidden>
+    <div class="step-h"><span class="n">4</span><div><h2>Why this matters</h2></div></div>
+    <div class="cards">
+      <div class="card"><h3>Removing names isn't enough</h3><p>In 1997 a researcher found the Massachusetts governor's hospital record in "anonymous" health data using only his ZIP code, birth date and sex. A few ordinary details are often enough to single someone out.</p></div>
+      <div class="card"><h3>Blurring is the fix</h3><p>Anonymization makes details less precise (ages in ranges, country instead of city) until everyone shares their combination with several others. That's the "k" in k-anonymity; 5 is a common minimum.</p></div>
+      <div class="card"><h3>A crowd isn't always enough</h3><p>If all 5 people in your crowd earn the same salary band, anyone who knows you're in that crowd knows your salary. Good anonymization also checks that private answers vary inside each group.</p></div>
+    </div>
+    <div class="row" style="margin-top:14px">
+      <button class="btn small" id="copy" type="button">Copy my result to share</button>
+      <span class="hint" id="copied" style="margin:0"></span>
+    </div>
+    <p class="hint">The shared text contains no personal details, only your score.</p>
+  </section>
+
+  <section class="panel cta">
+    <h2>Have a dataset to share safely?</h2>
+    <p class="sub">The Data Anonymizer checks a CSV file for people who could be singled out, suggests how to fix it, and exports a safer version. It runs entirely in your browser too.</p>
+    <a class="btn primary" href="https://alexsyna.github.io/awesome-pm-tools/data-anonymizer/">Try the data anonymizer →</a>
+  </section>
+
+  <section class="panel">
+    <details class="method" id="method">
+      <summary>How the estimate works, and its limits</summary>
+      <div id="method-body"></div>
+    </details>
+  </section>
+
+  <footer>Runs entirely in your browser. Nothing you choose is stored or sent anywhere.</footer>
+</main>
+
+<script>
+// ---------- statistics (sources in the "How the estimate works" section) ----------
+const YEAR = new Date().getFullYear();
+const EU_TOTAL = 10_450_000; // Eurostat, ICT specialists in employment, EU, 2025
+// Tech workforce per country. Cities: share of the country's population living there (an approximation
+// for the share of its tech workforce; tech jobs cluster in big cities, so big-city shares are understated).
+const COUNTRIES = {
+  DE: { label: "Germany", n: 2_300_000, note: "Eurostat 2025", cities: [["Berlin", 4.6], ["Hamburg", 2.3], ["Munich", 1.8], ["Cologne", 1.3], ["Frankfurt", 0.9], ["Stuttgart", 0.76], ["Düsseldorf", 0.75], ["Leipzig", 0.75], ["Dresden", 0.68]] },
+  GR: { label: "Greece", n: 110_000, note: "estimate: Eurostat 2025 (2.5% of employment) × ELSTAT 2025 (4.4 million employed)", cities: [["Athens (Attica)", 36.5], ["Thessaloniki", 10.5], ["Patras", 2.1], ["Heraklion", 1.7], ["Larissa", 1.4]] },
+  FR: { label: "France", n: 1_400_000, note: "Eurostat 2025", cities: [["Paris", 3.1]] },
+  ES: { label: "Spain", n: 1_100_000, note: "Eurostat 2025", cities: [["Madrid", 7.0], ["Barcelona", 3.4]] },
+  IT: { label: "Italy", n: 900_000, note: "Eurostat 2025", cities: [["Rome", 4.7], ["Milan", 2.3]] },
+  EU: { label: "Another EU country", n: 211_000, note: "average of the other 22 EU countries (Eurostat 2025)", cities: [] },
+};
+// Age: Eurostat 2025 split (36.0% aged 15–34, 64.0% aged 35–74), shaped within each part by the
+// Stack Overflow 2024 professional-developer age bands.
+const AGE_BANDS = [[18, 24, 10.3], [25, 34, 25.7], [35, 44, 40.9], [45, 54, 16.0], [55, 64, 6.0], [65, 74, 1.1]];
+const GENDER = [["Woman", 19.5], ["Man", 79.5], ["Non-binary / other", 1.0]]; // Eurostat 2025: 19.5% women; 1% non-binary is our assumption
+// Role: Stack Overflow 2024 "current job", students left out; "family" is used when blurring.
+const ROLES = [
+  ["Full-stack developer", 30.7, "Software development"], ["Back-end developer", 16.7, "Software development"],
+  ["Front-end developer", 5.6, "Software development"], ["Mobile developer", 3.4, "Software development"],
+  ["Embedded / devices developer", 2.7, "Software development"], ["Enterprise apps developer", 4.2, "Software development"],
+  ["Game developer", 1.2, "Software development"], ["AI developer", 0.9, "Software development"],
+  ["Blockchain developer", 0.4, "Software development"], ["QA / test engineer", 0.9, "Software development"],
+  ["Data scientist / ML specialist", 1.7, "Data & AI"], ["Data engineer", 1.9, "Data & AI"], ["Data or business analyst", 0.9, "Data & AI"],
+  ["DevOps / SRE / cloud engineer", 3.3, "Infrastructure, ops & security"], ["System administrator", 0.9, "Infrastructure, ops & security"],
+  ["Database administrator", 0.3, "Infrastructure, ops & security"], ["Security professional", 0.6, "Infrastructure, ops & security"],
+  ["Hardware engineer", 0.3, "Infrastructure, ops & security"],
+  ["Engineering manager", 2.1, "Management, product & design"], ["Product or project manager", 1.2, "Management, product & design"],
+  ["Senior executive (CTO, VP…)", 1.4, "Management, product & design"], ["Designer", 0.3, "Management, product & design"],
+  ["Developer advocate / experience", 0.6, "Management, product & design"], ["Marketing or sales", 0.2, "Management, product & design"],
+  ["Researcher / scientist", 4.3, "Research & teaching"], ["Educator", 0.6, "Research & teaching"],
+  ["Something else", 4.1, "Something else"],
+];
+const EXPERIENCE = [["Less than 1 year", 5.5, "0–4 years"], ["1–4 years", 27.3, "0–4 years"], ["5–9 years", 25.1, "5–14 years"], ["10–14 years", 16.6, "5–14 years"],
+  ["15–19 years", 9.3, "15+ years"], ["20–24 years", 6.8, "15+ years"], ["25 years or more", 9.4, "15+ years"]]; // Stack Overflow 2024, years coding professionally
+const COMPANY = [["Just me (freelancer)", 6.1, "Under 100 people"], ["2–9 people", 10.4, "Under 100 people"], ["10–19 people", 8.9, "Under 100 people"],
+  ["20–99 people", 21.2, "Under 100 people"], ["100–499 people", 18.5, "100–999 people"], ["500–999 people", 6.7, "100–999 people"],
+  ["1,000–4,999 people", 11.0, "1,000+ people"], ["5,000–9,999 people", 3.8, "1,000+ people"], ["10,000+ people", 11.4, "1,000+ people"]]; // Stack Overflow 2024 ("I don't know" left out)
+const REMOTE = [["Hybrid", 42], ["Fully remote", 38], ["In the office", 20]]; // Stack Overflow 2024
+const EDUCATION = [["Master's degree", 28.4, "University degree"], ["Bachelor's degree", 45.7, "University degree"], ["PhD or professional degree", 4.2, "University degree"],
+  ["Associate degree", 3.0, "University degree"], ["Some university, no degree", 11.5, "No degree"], ["Secondary school", 5.4, "No degree"],
+  ["Primary school", 0.6, "No degree"], ["Something else", 1.2, "No degree"]]; // Stack Overflow 2024, professional developers
+const INDUSTRY = [["Software development", 41.3], ["Fintech", 5.7], ["Internet / telecom / IT services", 5.6], ["Banking / financial services", 4.8],
+  ["Healthcare", 4.4], ["Manufacturing", 4.4], ["Retail / consumer services", 4.4], ["Government", 3.3], ["Media / advertising", 3.1],
+  ["Higher education", 3.1], ["Transport / supply chain", 3.0], ["IT consulting / systems design", 2.9], ["Energy", 2.0], ["Insurance", 1.4],
+  ["Something else", 10.6]]; // Stack Overflow 2024, professional developers
+
+// Shares as fractions of the whole list (lists that leave a group out, like students, are re-scaled).
+const frac = (list, name) => { const t = list.reduce((s, x) => s + x[1], 0); const r = list.find((x) => x[0] === name); return r ? r[1] / t : null; };
+const groupFrac = (list, group) => { const t = list.reduce((s, x) => s + x[1], 0); return list.filter((x) => x[2] === group).reduce((s, x) => s + x[1], 0) / t; };
+const fmt = (n) => Math.round(n).toLocaleString("en-GB");
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const $ = (s) => document.querySelector(s);
+
+// ---------- the form ----------
+const FIELDS = [
+  { key: "country", label: "Country you work in", options: Object.entries(COUNTRIES).map(([k, c]) => [k, c.label]) },
+  { key: "city", label: "City", options: [] },
+  { key: "birthYear", label: "Year you were born", options: Array.from({ length: 57 }, (_, i) => YEAR - 18 - i).map((y) => [String(y), String(y)]) },
+  { key: "gender", label: "Gender", options: GENDER.map((g) => [g[0], g[0]]) },
+  { key: "role", label: "Your role", options: ROLES.map((r) => [r[0], r[0]]) },
+  { key: "experience", label: "Years working in tech", options: EXPERIENCE.map((r) => [r[0], r[0]]) },
+  { key: "company", label: "Size of your employer", options: COMPANY.map((r) => [r[0], r[0]]) },
+  { key: "remote", label: "Where you work", options: REMOTE.map((r) => [r[0], r[0]]) },
+  { key: "education", label: "Highest education", options: EDUCATION.map((r) => [r[0], r[0]]) },
+  { key: "industry", label: "Industry", options: INDUSTRY.map((r) => [r[0], r[0]]) },
+];
+const answers = {};
+function cityOptions() {
+  const c = COUNTRIES[answers.country];
+  if (!c || !c.cities.length) return [];
+  return [...c.cities.map(([n]) => [n, n]), ["Another city or town", "Another city or town"]];
+}
+function renderForm() {
+  $("#form").innerHTML = FIELDS.map((f) => {
+    const opts = f.key === "city" ? cityOptions() : f.options;
+    const disabled = f.key === "city" && !opts.length;
+    return `<label>${f.label}<select data-k="${f.key}" ${disabled ? "disabled" : ""}><option value="">${disabled ? (answers.country ? "Not available for this country" : "Choose a country first") : "Prefer not to say"}</option>
+      ${opts.map(([v, l]) => `<option value="${esc(v)}" ${answers[f.key] === v ? "selected" : ""}>${esc(l)}</option>`).join("")}</select></label>`;
+  }).join("");
+  document.querySelectorAll("#form select").forEach((s) => s.onchange = () => {
+    answers[s.dataset.k] = s.value;
+    if (s.dataset.k === "country") { answers.city = ""; renderForm(); $('#form select[data-k="city"]').focus(); }
+  });
+}
+
+// ---------- the model ----------
+// Each detail has levels from most to least precise; each level gives the share of people who match
+// (p) and a short description. Expected others like you = (N − 1) × product of the shares.
+function ageBand(y) { const age = YEAR - y; return AGE_BANDS.find(([a, b]) => age >= a && age <= b) ?? AGE_BANDS[AGE_BANDS.length - 1]; }
+function detailsFor(a) {
+  const D = [];
+  if (a.country) {
+    const c = COUNTRIES[a.country], city = a.city && a.city !== "Another city or town" ? c.cities.find((x) => x[0] === a.city) : null;
+    const otherShare = 1 - c.cities.reduce((s, x) => s + x[1], 0) / 100;
+    const levels = [];
+    if (a.city) levels.push({ name: city ? city[0] : "Another town", text: `${city ? city[0] : "A smaller town"}, ${c.label}`, p: city ? city[1] / 100 : otherShare, n: c.n });
+    levels.push({ name: "Country", text: c.label, p: 1, n: c.n });
+    levels.push({ name: "Europe", text: "Somewhere in the EU", p: 1, n: EU_TOTAL });
+    D.push({ key: "where", label: "Where", levels });
+  }
+  if (a.birthYear) {
+    const y = +a.birthYear, [lo, hi, s] = ageBand(y), w = hi - lo + 1, age = YEAR - y;
+    D.push({ key: "age", label: "Age", levels: [
+      { name: "Exact year", text: `Born ${y}`, p: s / 100 / w },
+      { name: "5 years", text: `Born ${y - 2}–${y + 2}`, p: Math.min(s / 100, s / 100 / w * 5) },
+      { name: `${lo}–${hi}`, text: `Aged ${lo}–${hi}`, p: s / 100 },
+      { name: age < 35 ? "Under 35" : "35+", text: age < 35 ? "Under 35" : "35 or older", p: age < 35 ? 0.36 : 0.64 },
+      { name: "Hide", text: "Any age", p: 1 }] });
+  }
+  if (a.gender) D.push({ key: "gender", label: "Gender", levels: [{ name: a.gender, text: a.gender, p: frac(GENDER, a.gender) }, { name: "Hide", text: "Any gender", p: 1 }] });
+  if (a.role) {
+    const fam = ROLES.find((r) => r[0] === a.role)[2];
+    D.push({ key: "role", label: "Role", levels: [{ name: "Exact", text: a.role, p: frac(ROLES, a.role) },
+      ...(fam !== "Something else" ? [{ name: fam, text: fam, p: groupFrac(ROLES, fam) }] : []), { name: "Hide", text: "Works in tech", p: 1 }] });
+  }
+  const banded = (key, label, list, v, anyText) => {
+    if (!v) return;
+    const g = list.find((x) => x[0] === v)[2];
+    D.push({ key, label, levels: [{ name: "Exact", text: v, p: frac(list, v) }, { name: g, text: g, p: groupFrac(list, g) }, { name: "Hide", text: anyText, p: 1 }] });
+  };
+  banded("experience", "Experience", EXPERIENCE, a.experience, "Any experience");
+  banded("company", "Employer size", COMPANY, a.company, "Any size");
+  if (a.remote) D.push({ key: "remote", label: "Work setup", levels: [{ name: a.remote, text: a.remote, p: frac(REMOTE, a.remote) }, { name: "Hide", text: "Any setup", p: 1 }] });
+  banded("education", "Education", EDUCATION, a.education, "Any education");
+  if (a.industry) D.push({ key: "industry", label: "Industry", levels: [{ name: a.industry, text: a.industry, p: frac(INDUSTRY, a.industry) }, { name: "Hide", text: "Any industry", p: 1 }] });
+  return D;
+}
+function estimate(D, lv) {
+  let n = a0().country ? COUNTRIES[a0().country].n : EU_TOTAL, p = 1;
+  D.forEach((d, i) => { const l = d.levels[lv[i]]; if (l.n) n = l.n; p *= l.p; });
+  const others = (n - 1) * p;
+  return { n, p, others, crowd: 1 + others, bits: D.map((d, i) => -Math.log2(d.levels[lv[i]].p)) };
+}
+const a0 = () => answers;
+const crowdText = (c) => c < 10 ? (Math.round(c * 10) / 10).toLocaleString("en-GB") : fmt(c);
+const scopeText = (n) => n === EU_TOTAL ? "the EU's 10.45 million tech professionals" : `${Object.values(COUNTRIES).find((c) => c.n === n)?.label === "Another EU country" ? "a typical EU country's" : `${Object.values(COUNTRIES).find((c) => c.n === n)?.label}'s`} ${fmt(n)} tech professionals`;
+
+// ---------- step 2: the result ----------
+let D = [], lv = [], start = null;
+function showResult() {
+  D = detailsFor(answers);
+  if (!D.length) { $("#go").textContent = "Choose at least one detail first"; setTimeout(() => $("#go").textContent = "Show me how unique I am", 1800); return; }
+  lv = D.map(() => 0);
+  start = estimate(D, lv);
+  const r = start, c = r.crowd;
+  $("#crowd-sub").textContent = `Among ${scopeText(r.n)}, people with exactly your answers:`;
+  const [cls, tag, line] = c < 2 ? ["bad", "You're probably unique", `With these ${D.length} details, someone who knows them could most likely pick you out of an "anonymous" dataset.`]
+    : c < 5 ? ["warn", "Only a handful like you", "A dataset with these details would narrow you down to a few people. Not enough to stay anonymous."]
+    : ["good", "You're in a crowd", "With these details you'd already be hidden among at least 5 people. Try adding more details to see how fast that changes."];
+  $("#verdict").innerHTML = `<div class="big">≈ ${crowdText(c)}</div><span class="tag ${cls}">${tag}</span><p class="sub">${line} ${c < 2 ? `The chance that anyone else matches is about ${Math.round((1 - Math.exp(-r.others)) * 100)}%.` : ""}</p>`;
+  // Bits: each detail narrows the crowd; log2(N) bits are enough to single one person out.
+  const need = Math.log2(r.n), total = r.bits.reduce((s, b) => s + b, 0), max = Math.max(need, total);
+  $("#bits").innerHTML = `<p class="sub" style="font-size:13px">How much each detail narrows you down, in bits (each bit halves the crowd):</p>`
+    + D.map((d, i) => ({ d, b: r.bits[i] })).sort((x, y) => y.b - x.b).map(({ d, b }) => `<div class="bit"><span>${d.label}</span><span class="track"><span class="fill" style="width:${b / max * 100}%"></span></span><span class="v">${b.toFixed(1)} bits</span></div>`).join("")
+    + `<div class="bit total"><span>All together</span><span class="track"><span class="fill" style="width:${total / max * 100}%"></span></span><span class="v">${total.toFixed(1)} bits</span></div>`;
+  $("#need").innerHTML = `About <b>${need.toFixed(1)} bits</b> are enough to single out one person among ${fmt(r.n)}. Your answers carry <b>${total.toFixed(1)}</b>.`;
+  ["#result", "#hide", "#lesson"].forEach((s) => $(s).hidden = false);
+  renderGame();
+  $("#result").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+// ---------- step 3: hide in the crowd ----------
+const K = 5;
+function renderGame() {
+  const r = estimate(D, lv), ok = r.crowd >= K;
+  const kept = r.bits.reduce((s, b) => s + b, 0) / start.bits.reduce((s, b) => s + b, 0);
+  const blurred = lv.filter((x, i) => x > 0).length;
+  // Tip: the next step that grows the crowd most for the least detail lost.
+  let tip = -1, best = 0;
+  if (!ok) D.forEach((d, i) => {
+    if (lv[i] + 1 >= d.levels.length) return;
+    const t = lv.slice(); t[i]++;
+    const e = estimate(D, t), lost = r.bits[i] - e.bits[i] + 1e-9, gain = Math.log2(e.crowd / r.crowd) / lost;
+    if (gain > best) { best = gain; tip = i; }
+  });
+  $("#meter").className = `meter ${ok ? "ok" : ""}`;
+  $("#meter").innerHTML = `<div class="row"><span>People like you: <span class="crowd">≈ ${crowdText(r.crowd)}</span></span><span class="kept">Detail kept: ${Math.round(kept * 100)}%</span></div>
+    <div class="bar" role="img" aria-label="Crowd size towards the goal of ${K}"><span style="width:${Math.min(100, r.crowd / K * 100)}%"></span></div>
+    ${ok ? `<div class="win">Hidden among ${crowdText(r.crowd)} people. You blurred ${blurred} of your ${D.length} details and kept ${Math.round(kept * 100)}% of the detail.</div>` : `<span class="kept">Goal: at least ${K} people. Scope: ${scopeText(r.n)}.</span>`}`;
+  $("#game").innerHTML = D.map((d, i) => `<div class="g ${i === tip ? "tip" : ""}"><div class="lbl">${d.label}<small>${esc(d.levels[lv[i]].text)}</small></div>
+    <div class="chips" role="group" aria-label="${d.label}">${d.levels.map((l, j) => `<button type="button" class="chip" data-d="${i}" data-l="${j}" aria-pressed="${lv[i] === j}">${esc(l.name)}</button>`).join("")}</div></div>`).join("");
+  document.querySelectorAll("#game .chip").forEach((b) => b.onclick = () => { lv[+b.dataset.d] = +b.dataset.l; renderGame(); });
+  // No personal details in the shared text: not even the country.
+  shareText = `With ${D.length} ordinary details about me, about ${crowdText(start.crowd)} ${start.crowd < 1.5 ? "person matches" : "people match"} me among my country's tech professionals${ok ? `. To hide among ${K} people I had to blur ${blurred} of them` : ""}. "Anonymous" data often isn't. How unique are you?${/^https?:/.test(location.href) ? " " + location.href.split("#")[0] : ""}`;
+}
+let shareText = "";
+$("#copy").onclick = async () => {
+  try { await navigator.clipboard.writeText(shareText); $("#copied").textContent = "Copied. Paste it into a post."; }
+  catch { $("#copied").textContent = shareText; }
+};
+$("#go").onclick = showResult;
+
+// ---------- methodology ----------
+$("#method-body").innerHTML = `
+<p>The estimate is simple arithmetic, not a lookup of real people: <b>people like you ≈ 1 + (tech workforce − 1) × share with your 1st detail × share with your 2nd detail × …</b></p>
+<ul>
+  <li><b>It treats details as independent.</b> In reality they're linked (age and experience, role and industry), so real crowds are often somewhat bigger than shown for very typical profiles, and smaller for unusual ones. The point is the order of magnitude, the same reasoning behind the well-known finding that most Americans were unique on ZIP code, birth date and sex.</li>
+  <li><b>City shares use population</b>, not tech jobs, because no city-level tech statistics exist across Europe. Tech jobs cluster in big cities, so the crowd for Berlin, Athens or Munich is likely underestimated.</li>
+  <li><b>Roles, experience, employer size, work setup, education and industry</b> come from a global developer survey, not from Europe alone.</li>
+</ul>
+<table><tr><th>Figure</th><th>Source</th></tr>
+<tr><td>Tech workforce: EU 10.45 million, Germany 2.3 million, France 1.4 million, Spain 1.1 million, Italy 0.9 million (2025)</td><td>Eurostat, ICT specialists in employment</td></tr>
+<tr><td>Greece ≈ 110,000</td><td>Eurostat 2025 (ICT specialists = 2.5% of employment) × ELSTAT 2025 (≈ 4.4 million employed)</td></tr>
+<tr><td>Women 19.5%; 36% aged 15–34</td><td>Eurostat 2025, EU averages (used for every country)</td></tr>
+<tr><td>Non-binary / other 1%</td><td>Our assumption; no European figure exists</td></tr>
+<tr><td>Age shape within under/over 35; role; years coding professionally; employer size; work setup; education; industry</td><td>Stack Overflow Developer Survey 2024 (about 65,000 respondents)</td></tr>
+<tr><td>City shares</td><td>National population figures, rounded</td></tr>
+</table>
+<p>"Bits" measure how much a detail narrows the crowd: a detail shared by half of people is 1 bit, by a quarter 2 bits, and so on. About log₂(N) bits single out one person among N.</p>`;
+
+renderForm();
+</script>
+</body>
+</html>
